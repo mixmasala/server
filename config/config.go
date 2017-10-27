@@ -82,10 +82,15 @@ func (sCfg *Server) validate() error {
 			}
 		}
 	} else {
-		// XXX: Enumerate the addresses, this won't work without other
-		// trickery, since the IP(s) of the node needs to be a known
-		// quantity for the purpose of publishing directory documents.
-		sCfg.Addresses = []string{defaultAddress}
+		// Try to guess a "suitable" external IPv4 address.  If people want
+		// to do loopback testing, they can manually specify one.  If people
+		// want to use IPng, they can manually specify that as well.
+		addr, err := getExternalAddress()
+		if err != nil {
+			return err
+		}
+
+		sCfg.Addresses = []string{addr.String() + defaultAddress}
 	}
 	if !filepath.IsAbs(sCfg.DataDir) {
 		return fmt.Errorf("config: Server: DataDir '%v' is not an absolute path", sCfg.DataDir)
