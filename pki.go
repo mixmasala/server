@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	pkiEarlyConnectSlack = 15 * time.Minute
+	pkiEarlyConnectSlack = 30 * time.Minute
 	pkiLateConnectSlack  = 3 * time.Minute
 )
 
@@ -126,8 +126,9 @@ type pki struct {
 	sync.RWMutex
 	sync.WaitGroup
 
-	s   *Server
-	log *logging.Logger
+	s     *Server
+	log   *logging.Logger
+	timer *time.Timer
 
 	docs map[uint64]*pkiCacheEntry
 
@@ -135,6 +136,9 @@ type pki struct {
 }
 
 func (p *pki) startWorker() {
+	const initialSpawnDelay = 5 * time.Second
+
+	p.timer = time.NewTimer(initialSpawnDelay)
 	p.Add(1)
 	go p.worker()
 }
@@ -145,7 +149,10 @@ func (p *pki) halt() {
 }
 
 func (p *pki) worker() {
+	const recheckInterval = 1 * time.Minute
+
 	defer func() {
+		p.timer.Stop()
 		p.Done()
 	}()
 
@@ -158,11 +165,95 @@ func (p *pki) worker() {
 		case <-p.haltCh:
 			p.log.Debugf("Terminating gracefully.")
 			return
+		case <-p.timer.C:
+		}
+		if !p.timer.Stop() {
+			<-p.timer.C
 		}
 
-		// XXX/pki: Do background PKI things, probably involving posting
-		// fetching, and keeping p.docs[] populated.
+		// Fetch the PKI documents as required.
+		didUpdate := false
+		for _, epoch := range p.documentsToFetch() {
+			// XXX/pki: Uncomment once there is a concrete PKI data source.
+			/*
+				// XXX: The PKI routines that touch the network need timeouts
+				// and a way to cancel.
+				d, err := p.pkiImpl.Get(epoch)
+				if err != nil {
+					p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
+					continue
+				}
+				// XXX/pki: Validate that the PKI document is sane.
+				//  * Our own descriptor should be listed.
+				//  * Each node name and link key should be unique.
+				//  * Etc?
+				ent, err := newPKICacheEntry(p.s, d)
+				if err != nil {
+					p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
+					continue
+				}
+				p.Lock()
+				p.docs[epoch] = ent
+				p.Unlock()
+				didUpdate = true
+			*/
+			_ = epoch // XXX: Not used yet.
+		}
+		if didUpdate {
+			// Dispose of the old PKI documents.
+			p.pruneDocuments()
+
+			// If the PKI document map changed, kick the connector worker.
+			p.s.connector.forceUpdate()
+		}
+
+		// XXX/pki: When it is time, generate more mix keys, and post the
+		// node's descriptor to the PKI.
+
+		p.timer.Reset(recheckInterval)
 	}
+}
+
+func (p *pki) pruneDocuments() {
+	now, _, _ := epochtime.Now()
+
+	p.Lock()
+	p.Unlock()
+	for epoch := range p.docs {
+		if epoch < now {
+			p.log.Debugf("Discarding PKI for epoch: %v", epoch)
+			delete(p.docs, epoch)
+		}
+		if epoch > now+1 {
+			// This should NEVER happen.
+			p.log.Debugf("Far future PKI document exists, clock ran backwards?: %v", epoch)
+		}
+	}
+}
+
+func (p *pki) documentsToFetch() []uint64 {
+	const nextFetchTill = 45 * time.Minute
+
+	ret := make([]uint64, 0, 2)
+	now, _, till := epochtime.Now()
+
+	p.RLock()
+	defer p.RUnlock()
+
+	// Fetch the document for the current epoch if it is missing.
+	if _, ok := p.docs[now]; !ok {
+		ret = append(ret, now)
+	}
+
+	// If it is after the time that the next PKI has been generated, fetch
+	// that as well, assuming it is missing.
+	if till < nextFetchTill {
+		if _, ok := p.docs[now+1]; !ok {
+			ret = append(ret, now+1)
+		}
+	}
+
+	return ret
 }
 
 func (p *pki) docsForEpochs(epochs []uint64) []*pkiCacheEntry {
@@ -184,7 +275,7 @@ func (p *pki) docsForOutgoing() ([]*pkiCacheEntry, uint64) {
 	now, elapsed, till := epochtime.Now()
 	epochs := []uint64{now}
 	if till < pkiEarlyConnectSlack {
-		// Allow connections to new nodes 15 mins in advance of an epoch
+		// Allow connections to new nodes 30 mins in advance of an epoch
 		// transition.
 		epochs = append(epochs, now+1)
 	} else if elapsed < pkiLateConnectSlack {
@@ -198,8 +289,9 @@ func (p *pki) docsForOutgoing() ([]*pkiCacheEntry, uint64) {
 
 func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bool) {
 	const (
-		earlySendSlack = 2 * time.Minute
-		lateSendSlack  = 2 * time.Minute
+		earlyAcceptSlack = 30 * time.Minute
+		earlySendSlack   = 2 * time.Minute
+		lateSendSlack    = 2 * time.Minute
 	)
 
 	// If mix authentication is disabled, then we just allow everyone to
@@ -214,7 +306,7 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 	now, elapsed, till := epochtime.Now()
 	epochs := []uint64{now}
 	if till < pkiEarlyConnectSlack {
-		// Allow connections from new nodes 15 mins in advance of an epoch
+		// Allow connections from new nodes 30 mins in advance of an epoch
 		// transition.
 		epochs = append(epochs, now+1)
 	} else if elapsed < pkiLateConnectSlack {
