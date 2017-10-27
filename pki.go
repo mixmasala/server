@@ -270,11 +270,11 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 	return
 }
 
-func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (canSend, isValid bool) {
+func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescriptor, canSend, isValid bool) {
 	// If mix authentication is disabled, then we just blindly blast away.
 	if p.s.cfg.Debug.DisableMixAuthentication {
 		p.log.Debugf("Outgoing: Blindly authenticating peer: '%v'(%v).", unsafeByteToPrintString(c.AdditionalData), ecdhToPrintString(c.PublicKey))
-		return true, true
+		return nil, true, true
 	}
 
 	var id [constants.NodeIDLength]byte
@@ -295,6 +295,7 @@ func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (canSend, isValid bo
 
 		// The node is listed in a consensus that's reasonably current.
 		isValid = true
+		desc = m
 
 		// If this is the document for the current epoch, the node is listed in
 		// it, and we can send packets.
@@ -303,7 +304,7 @@ func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (canSend, isValid bo
 		// reason the slack time exists is to account for clock skew, and it's
 		// all handled there.
 		if d.doc.Epoch == now {
-			return true, true
+			return m, true, true
 		}
 
 		// But we're not sure if we can send packets to it yet.

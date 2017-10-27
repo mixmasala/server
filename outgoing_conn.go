@@ -59,7 +59,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// Query the PKI to figure out if we can send or not, and to ensure that
 	// the peer is listed in a PKI document that's valid.
 	isValid := false
-	c.canSend, isValid = c.s.pki.authenticateOutgoing(creds)
+	_, c.canSend, isValid = c.s.pki.authenticateOutgoing(creds)
 
 	return isValid
 }
@@ -122,6 +122,25 @@ func (c *outgoingConn) worker() {
 
 	// Establish the outgoing connection.
 	for {
+		// Check to see if the connection should be made in the first
+		// place by seeing if the connection is in the PKI.  Without
+		// something like this, stale connections can get stuck in the
+		// dialing state since the connector relies on outgoingConnection
+		// objects to remove themselves from the connection table.
+		//
+		//
+		if desc, _, isValid := c.s.pki.authenticateOutgoing(&dialCheckCreds); isValid {
+			// The list of addresses could have changed, authenticateOutgoing
+			// will return the most "current" descriptor in most cases, so
+			// update the cached pointer.
+			if desc != nil {
+				c.dst = desc
+			}
+		} else {
+			c.log.Debugf("Bailing out of Dial loop, no longer in PKI.")
+			return
+		}
+
 		for _, addrPort := range c.dst.Addresses {
 			select {
 			case <-time.After(c.retryDelay):
@@ -136,16 +155,6 @@ func (c *outgoingConn) worker() {
 				}
 			case <-dialCtx.Done():
 				// Canceled mid-retry delay.
-				return
-			}
-
-			// Check to see if the connection should be made in the first
-			// place by seeing if the connection is in the PKI.  Without
-			// something like this, stale connections can get stuck in the
-			// dialing state since the connector relies on outgoingConnection
-			// objects to remove themselves from the connection table.
-			if !c.IsPeerValid(&dialCheckCreds) {
-				c.log.Debugf("Bailing out of Dial loop, no longer in PKI.")
 				return
 			}
 
