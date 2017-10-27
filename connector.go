@@ -79,6 +79,7 @@ func (co *connector) worker() {
 	const resweepInterval = 3 * time.Minute
 
 	defer func() {
+		co.timer.Stop()
 		co.Done()
 	}()
 	for {
