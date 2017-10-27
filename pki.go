@@ -198,8 +198,8 @@ func (p *pki) docsForOutgoing() ([]*pkiCacheEntry, uint64) {
 
 func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bool) {
 	const (
-		earlySendSlack = 3 * time.Minute
-		lateSendSlack  = 3 * time.Minute
+		earlySendSlack = 2 * time.Minute
+		lateSendSlack  = 2 * time.Minute
 	)
 
 	// If mix authentication is disabled, then we just allow everyone to

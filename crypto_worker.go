@@ -58,7 +58,7 @@ func (w *cryptoWorker) doUnwrap(pkt *packet) error {
 	if w.s.cfg.Debug.DisableKeyRotation {
 		keys = append(keys, w.mixKeys[debugStaticEpoch])
 	} else {
-		const gracePeriod = 3 * time.Minute
+		const gracePeriod = 2 * time.Minute
 
 		epoch, elapsed, till := epochtime.Now()
 		k, ok := w.mixKeys[epoch]
