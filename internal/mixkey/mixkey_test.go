@@ -27,7 +27,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testEpoch = 0x23 // Way in the past on systems with correct time.
+const (
+	testEpoch       = 0x23 // Way in the past on systems with correct time.
+	testPublishedAt = 0xdeadbabe
+)
 
 var (
 	tmpDir string
@@ -86,6 +89,12 @@ func doTestCreate(t *testing.T) {
 	// Ensure that the 0 byte pathological tag case behaves.
 	assert.True(k.IsReplay([]byte{}), "IsReplay([]byte{})")
 
+	// Ensure that the publish time is initialized correctly, set it, and
+	// recheck the new value.
+	assert.Equal(uint64(0), k.PublishedAt(), "PublishedAt")
+	k.SetPublishedAt(testPublishedAt)
+	assert.Equal(uint64(testPublishedAt), k.PublishedAt(), "Test PublishedAt")
+
 	// Populate the replay filter.
 	for _, v := range testPositiveTags {
 		isReplay := k.IsReplay(v)
@@ -105,6 +114,7 @@ func doTestLoad(t *testing.T) {
 	assert.Equal(&testKey, k.PrivateKey(), "Serialized private key")
 	assert.Equal(testKey.PublicKey(), k.PublicKey(), "Serialized public key")
 	assert.Equal(uint64(testEpoch), k.Epoch(), "Serialized epoch")
+	assert.Equal(uint64(testPublishedAt), k.PublishedAt(), "Serialized PublishedAt")
 
 	// Ensure that the loaded replay filter is consistent.
 	assert.True(k.IsReplay([]byte{}), "IsReplay([]byte{})")

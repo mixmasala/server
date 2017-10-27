@@ -31,13 +31,18 @@ import (
 	"github.com/katzenpost/core/epochtime"
 )
 
-const replayBucket = "replay"
+const (
+	replayBucket   = "replay"
+	metadataBucket = "metadata"
+	publishedAtKey = "publishedAt"
+)
 
 // MixKey is a Katzenpost server mix key.
 type MixKey struct {
-	db      *bolt.DB
-	keypair *ecdh.PrivateKey
-	epoch   uint64
+	db          *bolt.DB
+	keypair     *ecdh.PrivateKey
+	epoch       uint64
+	publishedAt uint64
 
 	refCount        int32
 	unlinkIfExpired bool
@@ -47,6 +52,30 @@ type MixKey struct {
 // expired.
 func (k *MixKey) SetUnlinkIfExpired(b bool) {
 	k.unlinkIfExpired = b
+}
+
+// SetPublishedAt sets the time the key was marked as published to the PKI.
+func (k *MixKey) SetPublishedAt(t uint64) {
+	var publishedAtBytes [8]byte
+	binary.LittleEndian.PutUint64(publishedAtBytes[:], t)
+
+	// Carve out the transaction used for the update, and grab the
+	// metadata bucket.
+	tx, err := k.db.Begin(true)
+	if err != nil {
+		panic("BUG: mixkey: failed to begin transaction: " + err.Error())
+	}
+	defer tx.Rollback()
+	bkt := tx.Bucket([]byte(metadataBucket))
+
+	// Set the key with the new value.
+	bkt.Put([]byte(publishedAtKey), publishedAtBytes[:])
+
+	// And commit the transaction.
+	if err := tx.Commit(); err != nil {
+		panic("BUG: mixkey: failed to write replay counter: " + err.Error())
+	}
+	k.publishedAt = t
 }
 
 // PublicKey returns the public component of the key.
@@ -62,6 +91,12 @@ func (k *MixKey) PrivateKey() *ecdh.PrivateKey {
 // Epoch returns the Katzenpost epoch associated with the keypair.
 func (k *MixKey) Epoch() uint64 {
 	return k.epoch
+}
+
+// PublishedAt returns the time the key was marked as published to the PKI,
+// as the number of seconds since the UNIX epoch.
+func (k *MixKey) PublishedAt() uint64 {
+	return k.publishedAt
 }
 
 // IsReplay marks a given replay tag as seen, and returns true iff the tag has
@@ -168,10 +203,9 @@ func (k *MixKey) flush() error {
 // given epoch.
 func New(dataDir string, epoch uint64) (*MixKey, error) {
 	const (
-		metadataBucket = "metadata"
-		versionKey     = "version"
-		pkKey          = "privateKey"
-		epochKey       = "epochKey"
+		versionKey = "version"
+		pkKey      = "privateKey"
+		epochKey   = "epochKey"
 	)
 	var err error
 
@@ -225,15 +259,28 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 			return nil, err
 		}
 
+		getUint64 := func(key string) (uint64, error) {
+			var buf []byte
+			if buf = bkt.Get([]byte(key)); buf == nil {
+				return 0, fmt.Errorf("mixkey: db missing entry '%v'", key)
+			}
+			if len(buf) != 8 {
+				return 0, fmt.Errorf("mixkey: db corrupted entry '%v'", key)
+			}
+			return binary.LittleEndian.Uint64(buf), nil
+		}
+
 		// Ensure the epoch is sane.
-		if b = bkt.Get([]byte(epochKey)); b == nil {
-			return nil, fmt.Errorf("mixkey: db missing epoch entry")
-		}
-		if len(b) != 8 {
-			return nil, fmt.Errorf("mixkey: db epoch entry corrupted")
-		}
-		if epoch != binary.LittleEndian.Uint64(b) {
+		if dbEpoch, err := getUint64(epochKey); err != nil {
+			return nil, err
+		} else if dbEpoch != epoch {
 			return nil, fmt.Errorf("mixkey: db epoch mismatch")
+		}
+
+		// Pull out the publishedAt value.
+		k.publishedAt, err = getUint64(publishedAtKey)
+		if err != nil {
+			return nil, err
 		}
 
 		isOk = true
@@ -245,13 +292,14 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	var epochBytes [8]byte
+	var epochBytes, publishedAtBytes [8]byte
 	binary.LittleEndian.PutUint64(epochBytes[:], epoch)
 
 	// Stash the version/key/epoch in the metadata bucket.
 	bkt.Put([]byte(versionKey), []byte{0})
 	bkt.Put([]byte(pkKey), k.keypair.Bytes())
 	bkt.Put([]byte(epochKey), epochBytes[:])
+	bkt.Put([]byte(publishedAtKey), publishedAtBytes[:])
 
 	// Commit the transaction, and flush the database to disk.
 	if err := tx.Commit(); err != nil {
