@@ -18,6 +18,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -128,6 +129,7 @@ type pki struct {
 
 	s     *Server
 	log   *logging.Logger
+	impl  cpki.Client
 	timer *time.Timer
 
 	docs map[uint64]*pkiCacheEntry
@@ -152,9 +154,31 @@ func (p *pki) worker() {
 	const recheckInterval = 1 * time.Minute
 
 	defer func() {
+		p.log.Debugf("Halting PKI worker.")
 		p.timer.Stop()
 		p.Done()
 	}()
+
+	if p.impl == nil {
+		p.log.Warningf("No implementation is configured, disabling PKI interface.")
+		return
+	}
+	pkiCtx, cancelFn := context.WithCancel(context.Background())
+	go func() {
+		select {
+		case <-p.haltCh:
+			cancelFn()
+		case <-pkiCtx.Done():
+		}
+	}()
+	isCanceled := func() bool {
+		select {
+		case <-pkiCtx.Done():
+			return true
+		default:
+			return false
+		}
+	}
 
 	// Note: The worker's start is delayed till after the Server's connector
 	// is initialized, so that force updating the outgoing connection table
@@ -165,6 +189,8 @@ func (p *pki) worker() {
 		case <-p.haltCh:
 			p.log.Debugf("Terminating gracefully.")
 			return
+		case <-pkiCtx.Done():
+			return
 		case <-p.timer.C:
 		}
 		if !p.timer.Stop() {
@@ -174,30 +200,24 @@ func (p *pki) worker() {
 		// Fetch the PKI documents as required.
 		didUpdate := false
 		for _, epoch := range p.documentsToFetch() {
-			// XXX/pki: Uncomment once there is a concrete PKI data source.
-			/*
-				// XXX: The PKI routines that touch the network need timeouts
-				// and a way to cancel.
-				d, err := p.pkiImpl.Get(epoch)
-				if err != nil {
-					p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
-					continue
-				}
-				// XXX/pki: Validate that the PKI document is sane.
-				//  * Our own descriptor should be listed.
-				//  * Each node name and link key should be unique.
-				//  * Etc?
-				ent, err := newPKICacheEntry(p.s, d)
-				if err != nil {
-					p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
-					continue
-				}
-				p.Lock()
-				p.docs[epoch] = ent
-				p.Unlock()
-				didUpdate = true
-			*/
-			_ = epoch // XXX: Not used yet.
+			d, err := p.impl.Get(pkiCtx, epoch)
+			if isCanceled() {
+				// Canceled mid-fetch.
+				return
+			}
+			if err != nil {
+				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
+				continue
+			}
+			ent, err := newPKICacheEntry(p.s, d)
+			if err != nil {
+				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
+				continue
+			}
+			p.Lock()
+			p.docs[epoch] = ent
+			p.Unlock()
+			didUpdate = true
 		}
 		if didUpdate {
 			// Dispose of the old PKI documents.
@@ -450,6 +470,8 @@ func newPKI(s *Server) *pki {
 	p.log = s.newLogger("pki")
 	p.docs = make(map[uint64]*pkiCacheEntry)
 	p.haltCh = make(chan interface{})
+
+	// XXX/pki: Initialize the concrete implementation.
 
 	// Note: This does not start the worker immediately since the worker can
 	// make calls into the connector (on PKI updates), which is initialized

@@ -199,7 +199,7 @@ func (s *Server) halt() {
 	// Close all outgoing connections.
 	if s.connector != nil {
 		s.connector.halt()
-		// Don't nil this out till after the scheduler has been torn down.
+		// Don't nil this out till after the PKI has been torn down.
 	}
 
 	// Stop the Sphinx workers.
@@ -214,7 +214,6 @@ func (s *Server) halt() {
 	if s.scheduler != nil {
 		s.scheduler.halt()
 		s.scheduler = nil
-		s.connector = nil // Scheduler calls into the connector.
 	}
 
 	// Flush and close the mix keys.
@@ -232,6 +231,7 @@ func (s *Server) halt() {
 	if s.pki != nil {
 		s.pki.halt()
 		s.pki = nil
+		s.connector = nil // PKI calls into the connector.
 	}
 
 	s.inboundPackets.Close()
