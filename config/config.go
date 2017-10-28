@@ -185,15 +185,15 @@ func (lCfg *Logging) validate() error {
 	return nil
 }
 
-// Authentication is the Katzenpost provider authentication configuration.
-type Authentication struct {
+// Provider is the Katzenpost provider configuration.
+type Provider struct {
 }
 
 // Config is the top level Katzenpost server configuration.
 type Config struct {
-	Server         *Server
-	Logging        *Logging
-	Authentication *Authentication
+	Server   *Server
+	Logging  *Logging
+	Provider *Provider
 	// XXX: PKI.
 
 	Debug *Debug
@@ -227,8 +227,8 @@ func Load(b []byte) (*Config, error) {
 			return nil, errors.New("config: DisableMixAuthentication set when not a Mix")
 		}
 		// XXX/provider: Do something here.
-	} else if cfg.Authentication != nil {
-		return nil, errors.New("config: Authentication block when not a Provider")
+	} else if cfg.Provider != nil {
+		return nil, errors.New("config: Provider block set when not a Provider")
 	}
 	if err := cfg.Logging.validate(); err != nil {
 		return nil, err

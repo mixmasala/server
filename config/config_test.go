@@ -32,7 +32,7 @@ func TestConfig(t *testing.T) {
 [server]
 Identifier = "katzenpost.example.com"
 Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
-DataDir = "/var/run/katzenpost"
+DataDir = "/var/lib/katzenpost"
 
 [Logging]
 Level = "DEBUG"
