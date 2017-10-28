@@ -127,10 +127,9 @@ type pki struct {
 	sync.RWMutex
 	sync.WaitGroup
 
-	s     *Server
-	log   *logging.Logger
-	impl  cpki.Client
-	timer *time.Timer
+	s    *Server
+	log  *logging.Logger
+	impl cpki.Client
 
 	docs map[uint64]*pkiCacheEntry
 
@@ -138,9 +137,7 @@ type pki struct {
 }
 
 func (p *pki) startWorker() {
-	const initialSpawnDelay = 5 * time.Second
 
-	p.timer = time.NewTimer(initialSpawnDelay)
 	p.Add(1)
 	go p.worker()
 }
@@ -151,11 +148,15 @@ func (p *pki) halt() {
 }
 
 func (p *pki) worker() {
-	const recheckInterval = 1 * time.Minute
+	const (
+		initialSpawnDelay = 5 * time.Second
+		recheckInterval   = 1 * time.Minute
+	)
 
+	timer := time.NewTimer(initialSpawnDelay)
 	defer func() {
 		p.log.Debugf("Halting PKI worker.")
-		p.timer.Stop()
+		timer.Stop()
 		p.Done()
 	}()
 
@@ -191,10 +192,10 @@ func (p *pki) worker() {
 			return
 		case <-pkiCtx.Done():
 			return
-		case <-p.timer.C:
+		case <-timer.C:
 		}
-		if !p.timer.Stop() {
-			<-p.timer.C
+		if !timer.Stop() {
+			<-timer.C
 		}
 
 		// Fetch the PKI documents as required.
@@ -230,7 +231,7 @@ func (p *pki) worker() {
 		// XXX/pki: When it is time, generate more mix keys, and post the
 		// node's descriptor to the PKI.
 
-		p.timer.Reset(recheckInterval)
+		timer.Reset(recheckInterval)
 	}
 }
 

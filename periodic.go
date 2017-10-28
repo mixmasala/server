@@ -24,8 +24,7 @@ import (
 type periodicTimer struct {
 	sync.WaitGroup
 
-	s      *Server
-	ticker *time.Ticker
+	s *Server
 
 	haltCh chan interface{}
 }
@@ -36,8 +35,9 @@ func (t *periodicTimer) halt() {
 }
 
 func (t *periodicTimer) worker() {
+	ticker := time.NewTicker(time.Second)
 	defer func() {
-		t.ticker.Stop()
+		ticker.Stop()
 		t.Done()
 	}()
 
@@ -47,7 +47,7 @@ func (t *periodicTimer) worker() {
 		select {
 		case <-t.haltCh:
 			return
-		case <-t.ticker.C:
+		case <-ticker.C:
 		}
 
 		// Do periodic housekeeping tasks at a rate of approximately 1 Hz.
@@ -83,7 +83,6 @@ func (t *periodicTimer) worker() {
 func newPeriodicTimer(s *Server) *periodicTimer {
 	t := new(periodicTimer)
 	t.s = s
-	t.ticker = time.NewTicker(time.Second)
 	t.haltCh = make(chan interface{})
 	t.Add(1)
 

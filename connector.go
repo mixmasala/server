@@ -28,9 +28,8 @@ type connector struct {
 	sync.RWMutex
 	sync.WaitGroup
 
-	s     *Server
-	log   *logging.Logger
-	timer *time.Timer
+	s   *Server
+	log *logging.Logger
 
 	conns map[[constants.NodeIDLength]byte]*outgoingConn
 
@@ -76,10 +75,14 @@ func (co *connector) dispatchPacket(pkt *packet) {
 }
 
 func (co *connector) worker() {
-	const resweepInterval = 3 * time.Minute
+	const (
+		initialSpawnDelay = 15 * time.Second
+		resweepInterval   = 3 * time.Minute
+	)
 
+	timer := time.NewTimer(initialSpawnDelay)
 	defer func() {
-		co.timer.Stop()
+		timer.Stop()
 		co.Done()
 	}()
 	for {
@@ -89,11 +92,11 @@ func (co *connector) worker() {
 			return
 		case <-co.forceUpdateCh:
 			co.log.Debugf("Starting forced sweep.")
-		case <-co.timer.C:
+		case <-timer.C:
 			co.log.Debugf("Starting periodic sweep.")
 		}
-		if !co.timer.Stop() {
-			<-co.timer.C
+		if !timer.Stop() {
+			<-timer.C
 		}
 
 		// Start outgoing connections as needed, based on the PKI documents
@@ -101,7 +104,7 @@ func (co *connector) worker() {
 		co.spawnNewConns()
 
 		co.log.Debugf("Done with sweep.")
-		co.timer.Reset(resweepInterval)
+		timer.Reset(resweepInterval)
 	}
 
 	// NOTREACHED
@@ -160,12 +163,9 @@ func (co *connector) onClosedConn(c *outgoingConn) {
 }
 
 func newConnector(s *Server) *connector {
-	const initialSpawnDelay = 15 * time.Second
-
 	co := new(connector)
 	co.s = s
 	co.log = s.newLogger("connector")
-	co.timer = time.NewTimer(initialSpawnDelay)
 	co.conns = make(map[[constants.NodeIDLength]byte]*outgoingConn)
 	co.haltCh = make(chan interface{})
 	co.forceUpdateCh = make(chan interface{}, 1) // See forceUpdate().

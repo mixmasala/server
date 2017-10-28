@@ -30,11 +30,9 @@ import (
 type serverScheduler struct {
 	sync.WaitGroup
 
-	s     *Server
-	timer *time.Timer
-	ch    *channels.InfiniteChannel
-	queue *queue.PriorityQueue
-	log   *logging.Logger
+	s   *Server
+	ch  *channels.InfiniteChannel
+	log *logging.Logger
 
 	haltCh chan interface{}
 }
@@ -46,10 +44,12 @@ func (sch *serverScheduler) halt() {
 }
 
 func (sch *serverScheduler) worker() {
+	q := queue.New()
 	ch := sch.ch.Out()
 	timerSlack := time.Duration(sch.s.cfg.Debug.SchedulerSlack) * time.Millisecond
+	timer := time.NewTimer(math.MaxInt64)
 	defer func() {
-		sch.timer.Stop()
+		timer.Stop()
 		sch.Done()
 	}()
 	for {
@@ -79,28 +79,28 @@ func (sch *serverScheduler) worker() {
 			// outgoing connection table.
 			if sch.s.pki.isValidForwardDest(&pkt.nextNodeHop.ID) {
 				sch.log.Debugf("Enqueueing packet: %v delta-t: %v", pkt.id, pkt.delay)
-				sch.queue.Enqueue(uint64(monotime.Now()+pkt.delay), pkt)
+				q.Enqueue(uint64(monotime.Now()+pkt.delay), pkt)
 			} else {
 				sID := nodeIDToPrintString(&pkt.nextNodeHop.ID)
 				sch.log.Debugf("Dropping packet: %v Next hop is invalid: %v", pkt.id, sID)
 				pkt.dispose()
 			}
-		case <-sch.timer.C:
+		case <-timer.C:
 			// Packet delay probably passed, packet dispatch handled as
 			// part of rescheduling the timer.
 		}
 
 		// Dispatch packets if possible and reschedule the next wakeup.
-		if !sch.timer.Stop() {
-			<-sch.timer.C
+		if !timer.Stop() {
+			<-timer.C
 		}
 		for {
 			// Peek at the next packet in the queue.
-			e := sch.queue.Peek()
+			e := q.Peek()
 			if e == nil {
 				// The queue is empty, just reschedule for the max duration,
 				// when there are packets to schedule, we'll get woken up.
-				sch.timer.Reset(math.MaxInt64)
+				timer.Reset(math.MaxInt64)
 				break
 			}
 
@@ -111,13 +111,13 @@ func (sch *serverScheduler) worker() {
 				// Packet dispatch will happen at a later time, so schedule
 				// the next timer tick, and go back to waiting for something
 				// interesting to happen.
-				sch.timer.Reset(dispatchAt - now)
+				timer.Reset(dispatchAt - now)
 				break
 			}
 
 			// The packet will be dispatched somehow, so remove it from the
 			// queue, and do the type assertion.
-			sch.queue.Pop()
+			q.Pop()
 			pkt := (e.Value).(*packet)
 
 			// Packet dispatch time is now or in the past, so it needs to be
@@ -145,10 +145,8 @@ func (sch *serverScheduler) worker() {
 func newScheduler(s *Server) *serverScheduler {
 	sch := new(serverScheduler)
 	sch.s = s
-	sch.queue = queue.New()
 	sch.log = s.newLogger("scheduler")
 	sch.ch = channels.NewInfiniteChannel()
-	sch.timer = time.NewTimer(math.MaxInt64)
 	sch.haltCh = make(chan interface{})
 	sch.Add(1)
 
