@@ -106,7 +106,8 @@ func (c *incomingConn) worker() {
 	}
 
 	// Start the reauthenticate ticker.
-	reauth := time.NewTicker(15 * time.Second)
+	reauthMs := time.Duration(c.s.cfg.Debug.ReauthInterval) * time.Millisecond
+	reauth := time.NewTicker(reauthMs)
 	defer reauth.Stop()
 
 	// Start reading from the peer.

@@ -37,6 +37,7 @@ const (
 	defaultSendSlack        = 50        // 50 ms.
 	defaultConnectTimeout   = 60 * 1000 // 60 sec.
 	defaultHandshakeTimeout = 30 * 1000 // 30 sec.
+	defaultReauthInterval   = 30 * 1000 // 30 sec.
 )
 
 var (
@@ -118,13 +119,17 @@ type Debug struct {
 	// or congestion in milliseconds.
 	SendSlack int
 
-	// ConnectTimeout specifies the maximum time a  connection can take to
+	// ConnectTimeout specifies the maximum time a connection can take to
 	// establish a TCP/IP connection in milliseconds.
 	ConnectTimeout int
 
 	// HandshakeTimeout specifies the maximum time a connection can take for a
 	// link protocol handshake in milliseconds.
 	HandshakeTimeout int
+
+	// ReauthInterval specifies the interval at which a connection will be
+	// reauthenticated in milliseconds.
+	ReauthInterval int
 
 	// GenerateOnly halts and cleans up the server right after key generation.
 	GenerateOnly bool
@@ -157,6 +162,9 @@ func (dCfg *Debug) applyDefaults() {
 	}
 	if dCfg.HandshakeTimeout <= 0 {
 		dCfg.HandshakeTimeout = defaultHandshakeTimeout
+	}
+	if dCfg.ReauthInterval <= 0 {
+		dCfg.ReauthInterval = defaultReauthInterval
 	}
 }
 

@@ -240,7 +240,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}()
 
 	// Start the reauthenticate ticker.
-	reauth := time.NewTicker(15 * time.Second)
+	reauthMs := time.Duration(c.s.cfg.Debug.ReauthInterval) * time.Millisecond
+	reauth := time.NewTicker(reauthMs)
 	defer reauth.Stop()
 
 	// Shuffle packets from the send queue out to the peer.
