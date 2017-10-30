@@ -49,7 +49,7 @@ type outgoingConn struct {
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// At a minimum, the peer's credentials should match what we started out
 	// with.  This is enforced even if mix authentication is disabled.
-	if !bytes.Equal([]byte(c.dst.Name), creds.AdditionalData) {
+	if !bytes.Equal(c.dst.IdentityKey.Bytes(), creds.AdditionalData) {
 		return false
 	}
 	if !bytes.Equal(c.dst.LinkKey.Bytes(), creds.PublicKey.Bytes()) {
@@ -116,7 +116,7 @@ func (c *outgoingConn) worker() {
 	}()
 
 	dialCheckCreds := wire.PeerCredentials{
-		AdditionalData: []byte(c.dst.Name),
+		AdditionalData: c.dst.IdentityKey.Bytes(),
 		PublicKey:      c.dst.LinkKey,
 	}
 
@@ -127,14 +127,13 @@ func (c *outgoingConn) worker() {
 		// something like this, stale connections can get stuck in the
 		// dialing state since the connector relies on outgoingConnection
 		// objects to remove themselves from the connection table.
-		//
-		//
 		if desc, _, isValid := c.s.pki.authenticateOutgoing(&dialCheckCreds); isValid {
 			// The list of addresses could have changed, authenticateOutgoing
 			// will return the most "current" descriptor in most cases, so
 			// update the cached pointer.
 			if desc != nil {
 				c.dst = desc
+				dialCheckCreds.PublicKey = c.dst.LinkKey
 			}
 		} else {
 			c.log.Debugf("Bailing out of Dial loop, no longer in PKI.")
@@ -196,8 +195,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
 		Authenticator:     c,
-		AdditionalData:    []byte(c.s.cfg.Server.Identifier),
-		AuthenticationKey: c.s.identity,
+		AdditionalData:    c.s.identityKey.PublicKey().Bytes(),
+		AuthenticationKey: c.s.linkKey,
 		RandomReader:      rand.Reader,
 	}
 	w, err := wire.NewSession(cfg, true)

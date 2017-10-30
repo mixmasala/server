@@ -135,7 +135,7 @@ func (co *connector) spawnNewConns() {
 
 func (co *connector) onNewConn(c *outgoingConn) {
 	var tmp [constants.NodeIDLength]byte
-	copy(tmp[:], c.dst.LinkKey.Bytes())
+	copy(tmp[:], c.dst.IdentityKey.Bytes())
 
 	co.closeAllWg.Add(1)
 	co.Lock()
@@ -152,7 +152,7 @@ func (co *connector) onNewConn(c *outgoingConn) {
 
 func (co *connector) onClosedConn(c *outgoingConn) {
 	var tmp [constants.NodeIDLength]byte
-	copy(tmp[:], c.dst.LinkKey.Bytes())
+	copy(tmp[:], c.dst.IdentityKey.Bytes())
 
 	co.Lock()
 	defer func() {

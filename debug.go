@@ -19,9 +19,9 @@ package server
 import (
 	"encoding/hex"
 	"strings"
-	"unicode"
 
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/sphinx/constants"
 )
 
@@ -33,18 +33,10 @@ func ecdhToPrintString(pk *ecdh.PublicKey) string {
 	return strings.ToUpper(hex.EncodeToString(pk.Bytes()))
 }
 
-func unsafeByteToPrintString(ad []byte) string {
-	r := make([]byte, 0, len(ad))
+func eddsaToPrintString(pk *eddsa.PublicKey) string {
+	return strings.ToUpper(hex.EncodeToString(pk.Bytes()))
+}
 
-	// This should *never* be used in production, since it attempts to give a
-	// printable representation of a byte sequence for debug logging, and it's
-	// slow.
-	for _, v := range ad {
-		if unicode.IsPrint(rune(v)) {
-			r = append(r, v)
-		} else {
-			r = append(r, '*') // At least I didn't pick `:poop:`.
-		}
-	}
-	return string(r)
+func bytesToPrintString(b []byte) string {
+	return strings.ToUpper(hex.EncodeToString(b))
 }

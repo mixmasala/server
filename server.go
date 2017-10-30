@@ -18,7 +18,6 @@
 package server
 
 import (
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -29,8 +28,7 @@ import (
 
 	"github.com/eapache/channels"
 	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/utils"
+	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/server/config"
 	"github.com/op/go-logging"
 )
@@ -47,8 +45,10 @@ var (
 
 // Server is a Katzenpost server instance.
 type Server struct {
-	cfg      *config.Config
-	identity *ecdh.PrivateKey
+	cfg *config.Config
+
+	identityKey *eddsa.PrivateKey
+	linkKey     *ecdh.PrivateKey
 
 	logBackend logging.LeveledBackend
 	log        *logging.Logger
@@ -126,44 +126,6 @@ func (s *Server) initLogging() error {
 	return nil
 }
 
-func (s *Server) initIdentity() error {
-	const (
-		keyFile = "identity.pem"
-		keyType = "X25519 PRIVATE KEY"
-	)
-	fn := filepath.Join(s.cfg.Server.DataDir, keyFile)
-
-	// Deserialize the key, if it exists.
-	if buf, err := ioutil.ReadFile(fn); err == nil {
-		defer utils.ExplicitBzero(buf)
-		blk, rest := pem.Decode(buf)
-		if rest != nil {
-			return fmt.Errorf("trailing garbage after identity key")
-		}
-		if blk.Type != keyType {
-			return fmt.Errorf("invalid PEM Type: '%v'", blk.Type)
-		}
-		defer utils.ExplicitBzero(blk.Bytes)
-
-		s.identity = new(ecdh.PrivateKey)
-		return s.identity.FromBytes(blk.Bytes)
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-
-	// No key exists, generate and persist to disk.
-	var err error
-	s.identity, err = ecdh.NewKeypair(rand.Reader)
-	if err != nil {
-		return err
-	}
-	blk := &pem.Block{
-		Type:  keyType,
-		Bytes: s.identity.Bytes(),
-	}
-	return ioutil.WriteFile(fn, pem.EncodeToMemory(blk), fileMode)
-}
-
 func (s *Server) newLogger(module string) *logging.Logger {
 	l := logging.MustGetLogger(module)
 	l.SetBackend(s.logBackend)
@@ -234,7 +196,10 @@ func (s *Server) halt() {
 		s.connector = nil // PKI calls into the connector.
 	}
 
+	// Clean up the top level components.
 	s.inboundPackets.Close()
+	s.linkKey.Reset()
+	s.identityKey.Reset()
 
 	s.log.Noticef("Shutdown complete.")
 }
@@ -262,12 +227,17 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	s.log.Notice("Server identifier is: '%v'", s.cfg.Server.Identifier)
 
-	// Initialize the server identity.
+	// Initialize the server identity and link keys.
 	if err := s.initIdentity(); err != nil {
 		s.log.Errorf("Failed to initialize identity: %v", err)
 		return nil, err
 	}
-	s.log.Noticef("Server identity public key is: %s", ecdhToPrintString(s.identity.PublicKey()))
+	s.log.Noticef("Server identity public key is: %s", eddsaToPrintString(s.identityKey.PublicKey()))
+	if err := s.initLink(); err != nil {
+		s.log.Errorf("Failed to initialize link key: %v", err)
+		return nil, err
+	}
+	s.log.Noticef("Server link public key is: %s", ecdhToPrintString(s.linkKey.PublicKey()))
 
 	// Load and or generate mix keys.
 	var err error

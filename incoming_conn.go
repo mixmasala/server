@@ -70,8 +70,8 @@ func (c *incomingConn) worker() {
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
 		Authenticator:     c,
-		AdditionalData:    []byte(c.s.cfg.Server.Identifier),
-		AuthenticationKey: c.s.identity,
+		AdditionalData:    c.s.identityKey.PublicKey().Bytes(),
+		AuthenticationKey: c.s.linkKey,
 		RandomReader:      rand.Reader,
 	}
 	var err error

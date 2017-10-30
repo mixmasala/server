@@ -85,7 +85,7 @@ func newPKICacheEntry(s *Server, d *cpki.Document) (*pkiCacheEntry, error) {
 
 	// Find our descriptor.
 	var err error
-	e.self, err = d.GetNodeByKey(s.identity.PublicKey().Bytes())
+	e.self, err = d.GetNodeByKey(s.identityKey.PublicKey().Bytes())
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func newPKICacheEntry(s *Server, d *cpki.Document) (*pkiCacheEntry, error) {
 		}
 		for _, v := range nodes {
 			var id [constants.NodeIDLength]byte
-			copy(id[:], v.LinkKey.Bytes())
+			copy(id[:], v.IdentityKey.Bytes())
 			m[id] = v
 		}
 	}
@@ -318,7 +318,7 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 	// If mix authentication is disabled, then we just allow everyone to
 	// connect as a mix.
 	if p.s.cfg.Debug.DisableMixAuthentication {
-		p.log.Debugf("Incoming: Blindly authenticating peer: '%v'(%v).", unsafeByteToPrintString(c.AdditionalData), ecdhToPrintString(c.PublicKey))
+		p.log.Debugf("Incoming: Blindly authenticating peer: '%v'(%v).", bytesToPrintString(c.AdditionalData), ecdhToPrintString(c.PublicKey))
 		return true, true
 	}
 
@@ -336,8 +336,12 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 		epochs = append(epochs, now-1)
 	}
 
+	if len(c.AdditionalData) != constants.NodeIDLength {
+		p.log.Debugf("Incoming: '%v' AD not an IdentityKey?.", bytesToPrintString(c.AdditionalData))
+		return false, false
+	}
 	var id [constants.NodeIDLength]byte
-	copy(id[:], c.PublicKey.Bytes())
+	copy(id[:], c.AdditionalData)
 
 	docs := p.docsForEpochs(epochs)
 	for _, d := range docs {
@@ -345,10 +349,10 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 		if !ok {
 			continue
 		}
-		if !bytes.Equal(c.AdditionalData, []byte(m.Name)) {
-			// That's odd, the link key is supposed to be a unique identifier,
-			// but the node's name doesn't match.
-			p.log.Warningf("Incoming: '%v'(%v) Name mismatch: '%v'", unsafeByteToPrintString(c.AdditionalData), ecdhToPrintString(c.PublicKey), m.Name)
+		if !bytes.Equal(m.LinkKey.Bytes(), c.PublicKey.Bytes()) {
+			// The LinkKey that is being used for authentication should
+			// match what is listed in the descriptor.
+			p.log.Warningf("Incoming: '%v' Public Key mismatch: '%v'", bytesToPrintString(c.AdditionalData), ecdhToPrintString(c.PublicKey))
 			continue
 		}
 
@@ -386,12 +390,14 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescriptor, canSend, isValid bool) {
 	// If mix authentication is disabled, then we just blindly blast away.
 	if p.s.cfg.Debug.DisableMixAuthentication {
-		p.log.Debugf("Outgoing: Blindly authenticating peer: '%v'(%v).", unsafeByteToPrintString(c.AdditionalData), ecdhToPrintString(c.PublicKey))
+		p.log.Debugf("Outgoing: Blindly authenticating peer: '%v'(%v).", bytesToPrintString(c.AdditionalData), ecdhToPrintString(c.PublicKey))
 		return nil, true, true
 	}
 
+	// Don't need to check length here because all callers either explicitly
+	// set this, or validate it (assuming it's coming from a peer).
 	var id [constants.NodeIDLength]byte
-	copy(id[:], c.PublicKey.Bytes())
+	copy(id[:], c.AdditionalData)
 
 	docs, now := p.docsForOutgoing()
 	for _, d := range docs {
@@ -399,10 +405,10 @@ func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescr
 		if !ok {
 			continue
 		}
-		if !bytes.Equal(c.AdditionalData, []byte(m.Name)) {
-			// That's odd, the link key is supposed to be a unique identifier,
-			// but the node's name doesn't match.
-			p.log.Warningf("Outgoing: '%v'(%v) Name mismatch: '%v'", unsafeByteToPrintString(c.AdditionalData), ecdhToPrintString(c.PublicKey), m.Name)
+		if !bytes.Equal(m.LinkKey.Bytes(), c.PublicKey.Bytes()) {
+			// The LinkKey that is being used for authentication should
+			// match what is listed in the descriptor.
+			p.log.Warningf("Outgoing: '%v' Public Key mismatch: '%v'", bytesToPrintString(c.AdditionalData), ecdhToPrintString(c.PublicKey))
 			continue
 		}
 
@@ -433,7 +439,7 @@ func (p *pki) outgoingDestinations() map[[constants.NodeIDLength]byte]*cpki.MixD
 	for _, d := range docs {
 		for _, v := range d.outgoing {
 			var id [constants.NodeIDLength]byte
-			copy(id[:], v.LinkKey.Bytes())
+			copy(id[:], v.IdentityKey.Bytes())
 
 			// De-duplicate.
 			if _, ok := descMap[id]; !ok {
