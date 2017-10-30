@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
@@ -131,7 +132,9 @@ type pki struct {
 	log  *logging.Logger
 	impl cpki.Client
 
-	docs map[uint64]*pkiCacheEntry
+	docs               map[uint64]*pkiCacheEntry
+	lastPublishedEpoch uint64
+	lastWarnedEpoch    uint64
 
 	haltCh chan interface{}
 }
@@ -148,10 +151,7 @@ func (p *pki) halt() {
 }
 
 func (p *pki) worker() {
-	const (
-		initialSpawnDelay = 5 * time.Second
-		recheckInterval   = 1 * time.Minute
-	)
+	const initialSpawnDelay = 5 * time.Second
 
 	timer := time.NewTimer(initialSpawnDelay)
 	defer func() {
@@ -186,6 +186,8 @@ func (p *pki) worker() {
 	// is guaranteed to work.
 
 	for {
+		const recheckInterval = 1 * time.Minute
+
 		select {
 		case <-p.haltCh:
 			p.log.Debugf("Terminating gracefully.")
@@ -228,8 +230,16 @@ func (p *pki) worker() {
 			p.s.connector.forceUpdate()
 		}
 
-		// XXX/pki: When it is time, generate more mix keys, and post the
-		// node's descriptor to the PKI.
+		// Check to see if we need to publish the descriptor, and do so, along
+		// with all the key rotation bits.
+		err := p.publishDescriptorIfNeeded(pkiCtx)
+		if isCanceled() {
+			// Canceled mid-post
+			return
+		}
+		if err != nil {
+			p.log.Warningf("Failed to post to PKI: %v", err)
+		}
 
 		timer.Reset(recheckInterval)
 	}
@@ -250,6 +260,112 @@ func (p *pki) pruneDocuments() {
 			p.log.Debugf("Far future PKI document exists, clock ran backwards?: %v", epoch)
 		}
 	}
+}
+
+func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
+	publishDeadline := epochtime.Period - (3600 * time.Second)
+
+	epoch, _, till := epochtime.Now()
+	doPublishEpoch := uint64(0)
+	switch p.lastPublishedEpoch {
+	case 0:
+		// Initial startup.  Regardless of the deadline, publish.
+		p.log.Debugf("Initial startup or correcting for time jump.")
+		doPublishEpoch = epoch
+	case epoch:
+		// Check the deadline for the next publication time.
+		if till > publishDeadline {
+			p.log.Debugf("Within the publication time for epoch: %v", epoch+1)
+			doPublishEpoch = epoch + 1
+			break
+		}
+
+		// Well, we appeared to have missed the publication deadline for the
+		// next epoch, so give up till the transition.
+		if p.lastWarnedEpoch != epoch {
+			// Debounce this so we don't spam the log.
+			p.lastWarnedEpoch = epoch
+			return fmt.Errorf("missed publication deadline for epoch: %v", epoch+1)
+		}
+		return nil
+	case epoch + 1:
+		// The next epoch has been published.
+		return nil
+	default:
+		// What the fuck?  The last descriptor that we published is a time
+		// that we don't recognize.  The system's civil time probably jumped,
+		// even though the assumption is that all nodes run NTP.
+		p.log.Warningf("Last published epoch %v is wildly disjointed from %v.", p.lastPublishedEpoch, epoch)
+
+		// I don't even know what the sane thing to do here is, just treat it
+		// as if the node's just started and publish for the current I guess.
+		doPublishEpoch = epoch
+	}
+
+	// Note: Why, yes I *could* cache the descriptor and save a trivial amount
+	// of time and CPU, but this is invoked infrequently enough that it's
+	// probably not worth it.
+
+	// Generate the non-key parts of the descriptor.
+	desc := &cpki.MixDescriptor{
+		Name:        p.s.cfg.Server.Identifier,
+		IdentityKey: p.s.identityKey.PublicKey(),
+		LinkKey:     p.s.linkKey.PublicKey(),
+		Addresses:   p.s.cfg.Server.Addresses,
+	}
+	if p.s.cfg.Server.IsProvider {
+		// Only set the layer if the node is a provider.  Otherwise, nodes
+		// shouldn't be self assigning this.
+		desc.Layer = cpki.LayerProvider
+	}
+	desc.MixKeys = make(map[uint64]*ecdh.PublicKey)
+
+	// Ensure that there are mix keys for the epochs [e, ..., e+2],
+	// assuming that key rotation isn't disabled, and fill them into
+	// the descriptor.
+	if p.s.cfg.Debug.DisableKeyRotation {
+		// In the static mix key case, just publish the static keys for
+		// all the epochs.
+		staticKey := p.s.mixKeys.keys[debugStaticEpoch]
+		for e := doPublishEpoch; e < doPublishEpoch+numMixKeys; e++ {
+			desc.MixKeys[e] = staticKey.PublicKey()
+		}
+	} else if didGen, err := p.s.mixKeys.generateMixKeys(doPublishEpoch); err == nil {
+		// Prune off the old mix keys.  Bad things happen if the epoch ever
+		// goes backwards, but everyone uses NTP right?
+		didPrune := p.s.mixKeys.pruneMixKeys()
+
+		// Add the keys to the descriptor.
+		for e := doPublishEpoch; e < doPublishEpoch+numMixKeys; e++ {
+			// Why, yes, this doesn't hold the lock.  The only time the map is
+			// altered is in mixkeys.generateMixKeys(), and mixkeys.pruneMixKeys(),
+			// both of which are only called from this code path serially.
+			k, ok := p.s.mixKeys.keys[e]
+			if !ok {
+				// The prune pass must have purged a key we intended to publish,
+				// so bail out and try again in a little while.
+				return fmt.Errorf("key that was scheduled for publication got pruned")
+			}
+			desc.MixKeys[e] = k.PublicKey()
+		}
+		if didGen || didPrune {
+			// Kick the crypto workers into reshadowing the mix keys,
+			// since there are either new keys, or less old keys.
+			p.s.reshadowCryptoWorkers()
+		}
+	} else {
+		// Sad panda, failed to generate the keys.
+		return err
+	}
+
+	// Post the descriptor to all the authorities.
+	err := p.impl.Post(pkiCtx, doPublishEpoch, p.s.identityKey, desc)
+	if err == nil {
+		p.log.Debugf("Posted descriptor for epoch: %v", doPublishEpoch)
+		p.lastPublishedEpoch = doPublishEpoch
+	}
+
+	return err
 }
 
 func (p *pki) documentsToFetch() []uint64 {
@@ -481,8 +597,8 @@ func newPKI(s *Server) *pki {
 	// XXX/pki: Initialize the concrete implementation.
 
 	// Note: This does not start the worker immediately since the worker can
-	// make calls into the connector (on PKI updates), which is initialized
-	// after the pki object.
+	// make calls into the connector and crypto workers (on PKI updates),
+	// which are initialized after the pki object.
 
 	return p
 }

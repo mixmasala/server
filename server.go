@@ -132,6 +132,13 @@ func (s *Server) newLogger(module string) *logging.Logger {
 	return l
 }
 
+func (s *Server) reshadowCryptoWorkers() {
+	s.log.Debugf("Calling all crypto workers to re-shadow the mix keys.")
+	for _, w := range s.cryptoWorkers {
+		w.updateMixKeys()
+	}
+}
+
 // Shutdown cleanly shuts down a given Server instance.
 func (s *Server) Shutdown() {
 	s.haltOnce.Do(func() { s.halt() })
@@ -178,12 +185,6 @@ func (s *Server) halt() {
 		s.scheduler = nil
 	}
 
-	// Flush and close the mix keys.
-	if s.mixKeys != nil {
-		s.mixKeys.halt()
-		s.mixKeys = nil
-	}
-
 	// Provider specific cleanup.
 	if s.cfg.Server.IsProvider {
 		// XXX/provider: Implement.
@@ -194,6 +195,12 @@ func (s *Server) halt() {
 		s.pki.halt()
 		s.pki = nil
 		s.connector = nil // PKI calls into the connector.
+	}
+
+	// Flush and close the mix keys.
+	if s.mixKeys != nil {
+		s.mixKeys.halt()
+		s.mixKeys = nil
 	}
 
 	// Clean up the top level components.

@@ -24,7 +24,10 @@ import (
 	"github.com/op/go-logging"
 )
 
-const debugStaticEpoch = 0
+const (
+	debugStaticEpoch = 0
+	numMixKeys       = 3
+)
 
 type mixKeys struct {
 	sync.Mutex
@@ -57,23 +60,62 @@ func (m *mixKeys) init() error {
 	// if the current time is in the clock skew grace period.  But it may not
 	// matter much in practice.
 	epoch, _, _ := epochtime.Now()
-	for t := epoch; t < epoch+3; t++ {
-		k, err := mixkey.New(m.s.cfg.Server.DataDir, t)
-		if err != nil {
-			// Clean up whatever keys that may have succeded.
-			for idx, v := range m.keys {
-				v.Deref()
-				delete(m.keys, idx)
-			}
-			return err
-		}
-		k.SetUnlinkIfExpired(true)
-		m.keys[t] = k
+	if _, err := m.generateMixKeys(epoch); err != nil {
+		return err
 	}
 
 	// TODO: Clean up stale mix keys hanging around the data directory.
 
 	return nil
+}
+
+func (m *mixKeys) generateMixKeys(baseEpoch uint64) (bool, error) {
+	didGenerate := false
+
+	m.Lock()
+	defer m.Unlock()
+	for e := baseEpoch; e < baseEpoch+numMixKeys; e++ {
+		// Skip keys that we already have.
+		if _, ok := m.keys[e]; ok {
+			continue
+		}
+
+		didGenerate = true
+		k, err := mixkey.New(m.s.cfg.Server.DataDir, e)
+		if err != nil {
+			// Clean up whatever keys that may have succeded.
+			for ee := baseEpoch; ee < baseEpoch+numMixKeys; ee++ {
+				if kk, ok := m.keys[ee]; ok {
+					kk.Deref()
+					delete(m.keys, ee)
+				}
+			}
+			return false, err
+		}
+		k.SetUnlinkIfExpired(true)
+		m.keys[e] = k
+	}
+
+	return didGenerate, nil
+}
+
+func (m *mixKeys) pruneMixKeys() bool {
+	epoch, _, _ := epochtime.Now()
+	didPrune := false
+
+	m.Lock()
+	defer m.Unlock()
+
+	for idx, v := range m.keys {
+		if idx < epoch {
+			m.log.Debugf("Purging expired key for epoch: %v", idx)
+			v.Deref()
+			delete(m.keys, idx)
+			didPrune = true
+		}
+	}
+
+	return didPrune
 }
 
 func (m *mixKeys) shadow(dst map[uint64]*mixkey.MixKey) {

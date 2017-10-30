@@ -42,8 +42,8 @@ type cryptoWorker struct {
 }
 
 func (w *cryptoWorker) updateMixKeys() {
-	// Really bad things will happen if this is called repeated after the
-	// worker has terminated, so don't do that.
+	// This is a blocking call, because bad things will happen if the keys
+	// happen to get out of sync.
 	w.updateCh <- true
 }
 
