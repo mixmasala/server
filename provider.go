@@ -86,6 +86,13 @@ func (p *provider) worker() {
 			pkt = e.(*packet)
 		}
 
+		// Sanity check the packet payload length.
+		if len(pkt.payload) != constants.ForwardPayloadLength {
+			p.log.Debugf("Dropping packet: %v (Invalid payload length: '%v')", pkt.id, len(pkt.payload))
+			pkt.dispose()
+			continue
+		}
+
 		// Fix the recipient by trimming off the trailing NUL bytes.
 		recipient := bytes.TrimRight(pkt.recipient.ID[:], "\x00")
 
