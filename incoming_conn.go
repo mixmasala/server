@@ -53,10 +53,14 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			// the user db.  Reject.
 			c.canSend = false
 			return false
+		} else if isClient {
+			// Ok this is a connection from a client.
+			c.fromClient = true
+			c.canSend = true // Clients can always send for now.
+			return true
 		}
-		c.fromClient = true
-		c.canSend = true // Clients can always send for now.
-		return true
+
+		// Connection is not from a client, so see if it's a mix.
 	}
 
 	// Well, the peer has to be a mix since we're not a provider, or the user
