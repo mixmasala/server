@@ -38,16 +38,14 @@ const (
 	defaultConnectTimeout   = 60 * 1000 // 60 sec.
 	defaultHandshakeTimeout = 30 * 1000 // 30 sec.
 	defaultReauthInterval   = 30 * 1000 // 30 sec.
+	defaultUserDB           = "users.db"
 )
 
-var (
-	defaultDebug   Debug
-	defaultLogging = Logging{
-		Disable: false,
-		File:    "",
-		Level:   defaultLogLevel,
-	}
-)
+var defaultLogging = Logging{
+	Disable: false,
+	File:    "",
+	Level:   defaultLogLevel,
+}
 
 // Server is the Katzenpost server configuration.
 type Server struct {
@@ -195,6 +193,22 @@ func (lCfg *Logging) validate() error {
 
 // Provider is the Katzenpost provider configuration.
 type Provider struct {
+	// UserDB is the path to the user database.  If left empty it will use
+	// `users.db` under the DataDir.
+	UserDB string
+}
+
+func (pCfg *Provider) applyDefaults(sCfg *Server) {
+	if pCfg.UserDB == "" {
+		pCfg.UserDB = filepath.Join(sCfg.DataDir, defaultUserDB)
+	}
+}
+
+func (pCfg *Provider) validate() error {
+	if !filepath.IsAbs(pCfg.UserDB) {
+		return fmt.Errorf("config: Provider: UserDB '%v' is not an absolute path", pCfg.UserDB)
+	}
+	return nil
 }
 
 // Config is the top level Katzenpost server configuration.
@@ -220,7 +234,7 @@ func Load(b []byte) (*Config, error) {
 		return nil, errors.New("config: No Server block was present")
 	}
 	if cfg.Debug == nil {
-		cfg.Debug = &defaultDebug
+		cfg.Debug = &Debug{}
 	}
 	if cfg.Logging == nil {
 		cfg.Logging = &defaultLogging
@@ -234,7 +248,14 @@ func Load(b []byte) (*Config, error) {
 		if cfg.Debug.DisableMixAuthentication {
 			return nil, errors.New("config: DisableMixAuthentication set when not a Mix")
 		}
-		// XXX/provider: Do something here.
+
+		if cfg.Provider == nil {
+			cfg.Provider = &Provider{}
+		}
+		cfg.Provider.applyDefaults(cfg.Server)
+		if err := cfg.Provider.validate(); err != nil {
+			return nil, err
+		}
 	} else if cfg.Provider != nil {
 		return nil, errors.New("config: Provider block set when not a Provider")
 	}

@@ -33,6 +33,7 @@ func TestConfig(t *testing.T) {
 Identifier = "katzenpost.example.com"
 Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
 DataDir = "/var/lib/katzenpost"
+IsProvider = true
 
 [Logging]
 Level = "DEBUG"
