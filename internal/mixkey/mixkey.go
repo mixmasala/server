@@ -78,37 +78,33 @@ func (k *MixKey) IsReplay(tag []byte) bool {
 	// TODO/perf: This probably should do something clever like a bloom filter
 	// combined with a write-back cache.
 
-	// Carve out the transaction used for the lookup + update, and grab
-	// the replay bucket.
-	tx, err := k.db.Begin(true)
-	if err != nil {
-		panic("BUG: mixkey: failed to begin transaction: " + err.Error())
-	}
-	defer tx.Rollback()
-	bkt := tx.Bucket([]byte(replayBucket))
-
-	// Retreive the counter from the database for the tag if it exists.
-	//
-	// XXX: The counter isn't actually used for anything since it isn't
-	// returned.  Not sure if it makes sense to keep it, but I don't think
-	// it costs us anything substantial to do so.
 	var seenCount uint64
-	if b := bkt.Get(tag); len(b) == 8 {
-		seenCount = binary.LittleEndian.Uint64(b)
-	}
-	seenCount++         // Increment the counter by 1.
-	if seenCount == 0 { // Should never happen ever, but handle correctly.
-		seenCount = math.MaxUint64
-	}
+	if err := k.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(replayBucket))
+		if bkt == nil {
+			panic("BUG: mixkey: `replay` bucket is missing")
+		}
 
-	// Write the (potentially incremented) counter.
-	var seenBytes [8]byte
-	binary.LittleEndian.PutUint64(seenBytes[:], seenCount)
-	bkt.Put(tag, seenBytes[:])
+		// Retreive the counter from the database for the tag if it exists.
+		//
+		// XXX: The counter isn't actually used for anything since it isn't
+		// returned.  Not sure if it makes sense to keep it, but I don't think
+		// it costs us anything substantial to do so.
+		if b := bkt.Get(tag); len(b) == 8 {
+			seenCount = binary.LittleEndian.Uint64(b)
+		}
+		seenCount++         // Increment the counter by 1.
+		if seenCount == 0 { // Should never happen ever, but handle correctly.
+			seenCount = math.MaxUint64
+		}
 
-	// And commit the transaction.
-	if err := tx.Commit(); err != nil {
-		panic("BUG: mixkey: failed to write replay counter: " + err.Error())
+		// Write the (potentially incremented) counter.
+		var seenBytes [8]byte
+		binary.LittleEndian.PutUint64(seenBytes[:], seenCount)
+		bkt.Put(tag, seenBytes[:])
+		return nil
+	}); err != nil {
+		panic("BUG: mixkey: Failed to query/update the replay counter: " + err.Error())
 	}
 
 	return seenCount != 1
@@ -180,94 +176,83 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 	// Initialize the structure and create or open the database.
 	f := filepath.Join(dataDir, fmt.Sprintf("mixkey-%d.db", epoch))
 	k := new(MixKey)
-	k.db, err = bolt.Open(f, 0600, nil) // TODO: O_DIRECT?
 	k.epoch = epoch
 	k.refCount = 1
+	k.db, err = bolt.Open(f, 0600, nil) // TODO: O_DIRECT?
 	if err != nil {
 		return nil, err
 	}
-	isOk := false
-	defer func() {
-		// Welp, something went catastrophically wrong, the key struct is
-		// getting abandoned, so close the database since the caller can't.
-		if !isOk {
-			k.db.Close()
+
+	didCreate := false
+	if err := k.db.Update(func(tx *bolt.Tx) error {
+		// Ensure that all the buckets exist, and grab the metadata bucket.
+		bkt, err := tx.CreateBucketIfNotExists([]byte(metadataBucket))
+		if err != nil {
+			return err
 		}
-	}()
-
-	// Start a transaction used to either load an existing key from disk,
-	// or to persist the newly generated key.
-	tx, err := k.db.Begin(true)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-
-	// Ensure that all the buckets exist, and grab the metadata bucket.
-	var bkt *bolt.Bucket
-	if bkt, err = tx.CreateBucketIfNotExists([]byte(metadataBucket)); err != nil {
-		return nil, err
-	}
-	if _, err = tx.CreateBucketIfNotExists([]byte(replayBucket)); err != nil {
-		return nil, err
-	}
-
-	if b := bkt.Get([]byte(versionKey)); b != nil {
-		// Well, looks like we loaded as opposed to created.
-		if len(b) != 1 || b[0] != 0 {
-			return nil, fmt.Errorf("mixkey: incompatible version: %d", uint(b[0]))
+		if _, err = tx.CreateBucketIfNotExists([]byte(replayBucket)); err != nil {
+			return err
 		}
 
-		// Deserialize the key.
-		if b = bkt.Get([]byte(pkKey)); b == nil {
-			return nil, fmt.Errorf("mixkey: db missing privateKey entry")
-		}
-		k.keypair = new(ecdh.PrivateKey)
-		if err = k.keypair.FromBytes(b); err != nil {
-			return nil, err
-		}
-
-		getUint64 := func(key string) (uint64, error) {
-			var buf []byte
-			if buf = bkt.Get([]byte(key)); buf == nil {
-				return 0, fmt.Errorf("mixkey: db missing entry '%v'", key)
+		if b := bkt.Get([]byte(versionKey)); b != nil {
+			// Well, looks like we loaded as opposed to created.
+			if len(b) != 1 || b[0] != 0 {
+				return fmt.Errorf("mixkey: incompatible version: %d", uint(b[0]))
 			}
-			if len(buf) != 8 {
-				return 0, fmt.Errorf("mixkey: db corrupted entry '%v'", key)
+
+			// Deserialize the key.
+			if b = bkt.Get([]byte(pkKey)); b == nil {
+				return fmt.Errorf("mixkey: db missing privateKey entry")
 			}
-			return binary.LittleEndian.Uint64(buf), nil
+			k.keypair = new(ecdh.PrivateKey)
+			if err = k.keypair.FromBytes(b); err != nil {
+				return err
+			}
+
+			getUint64 := func(key string) (uint64, error) {
+				var buf []byte
+				if buf = bkt.Get([]byte(key)); buf == nil {
+					return 0, fmt.Errorf("mixkey: db missing entry '%v'", key)
+				}
+				if len(buf) != 8 {
+					return 0, fmt.Errorf("mixkey: db corrupted entry '%v'", key)
+				}
+				return binary.LittleEndian.Uint64(buf), nil
+			}
+
+			// Ensure the epoch is sane.
+			if dbEpoch, err := getUint64(epochKey); err != nil {
+				return err
+			} else if dbEpoch != epoch {
+				return fmt.Errorf("mixkey: db epoch mismatch")
+			}
+
+			return nil
 		}
 
-		// Ensure the epoch is sane.
-		if dbEpoch, err := getUint64(epochKey); err != nil {
-			return nil, err
-		} else if dbEpoch != epoch {
-			return nil, fmt.Errorf("mixkey: db epoch mismatch")
+		// If control reaches here, then a new key needs to be created.
+		didCreate = true
+		k.keypair, err = ecdh.NewKeypair(rand.Reader)
+		if err != nil {
+			return err
 		}
+		var epochBytes [8]byte
+		binary.LittleEndian.PutUint64(epochBytes[:], epoch)
 
-		isOk = true
-		return k, nil
-	}
+		// Stash the version/key/epoch in the metadata bucket.
+		bkt.Put([]byte(versionKey), []byte{0})
+		bkt.Put([]byte(pkKey), k.keypair.Bytes())
+		bkt.Put([]byte(epochKey), epochBytes[:])
 
-	// If control reaches here, then a new key needs to be created.
-	k.keypair, err = ecdh.NewKeypair(rand.Reader)
-	if err != nil {
+		return nil
+	}); err != nil {
+		k.db.Close()
 		return nil, err
 	}
-	var epochBytes [8]byte
-	binary.LittleEndian.PutUint64(epochBytes[:], epoch)
-
-	// Stash the version/key/epoch in the metadata bucket.
-	bkt.Put([]byte(versionKey), []byte{0})
-	bkt.Put([]byte(pkKey), k.keypair.Bytes())
-	bkt.Put([]byte(epochKey), epochBytes[:])
-
-	// Commit the transaction, and flush the database to disk.
-	if err := tx.Commit(); err != nil {
-		return nil, err
+	if didCreate {
+		// Flush the newly created database to disk.
+		k.db.Sync()
 	}
-	k.db.Sync()
 
-	isOk = true
 	return k, nil
 }
