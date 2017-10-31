@@ -83,6 +83,24 @@ func (d *boltUserDB) Add(u []byte, k *ecdh.PublicKey) error {
 	return err
 }
 
+func (d *boltUserDB) Remove(u []byte) error {
+	if u == nil || len(u) > userdb.MaxUsernameSize {
+		return fmt.Errorf("userdb: invalid username: `%v`", u)
+	}
+
+	err := d.db.Update(func(tx *bolt.Tx) error {
+		// Grab the `users` bucket.
+		bkt := tx.Bucket([]byte(usersBucket))
+		if bkt == nil {
+			panic("BUG: userdb: `users` bucket is missing")
+		}
+
+		// Delete the user's entry.
+		return bkt.Delete(u)
+	})
+	return err
+}
+
 func (d *boltUserDB) Close() {
 	d.db.Sync()
 	d.db.Close()

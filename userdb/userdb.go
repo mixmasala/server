@@ -34,6 +34,9 @@ type UserDB interface {
 	// updated.
 	Add([]byte, *ecdh.PublicKey) error
 
+	// Remove removes the user identified by the username from the database.
+	Remove([]byte) error
+
 	// Close closes the UserDB instance.
 	Close()
 }
