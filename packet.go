@@ -56,6 +56,9 @@ type packet struct {
 	delay      time.Duration
 	recvAt     time.Duration
 	dispatchAt time.Duration
+
+	mustForward   bool
+	mustTerminate bool
 }
 
 func (pkt *packet) splitCommands() error {
@@ -172,6 +175,8 @@ func (pkt *packet) dispose() {
 	pkt.delay = 0
 	pkt.recvAt = 0
 	pkt.dispatchAt = 0
+	pkt.mustForward = false
+	pkt.mustTerminate = false
 
 	// Return the packet struct to the pool.
 	pktPool.Put(pkt)

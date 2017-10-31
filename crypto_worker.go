@@ -193,6 +193,11 @@ func (w *cryptoWorker) worker() {
 				pkt.dispose()
 				continue
 			}
+			if pkt.mustTerminate {
+				w.log.Debugf("Dropping packet: %v (Provider received forward packet from mix)", pkt.id)
+				pkt.dispose()
+				continue
+			}
 
 			// Check and adjust the delay for queue dwell time.
 			pkt.delay = time.Duration(pkt.nodeDelay.Delay) * time.Millisecond
@@ -222,6 +227,13 @@ func (w *cryptoWorker) worker() {
 		// node.  Both of the operations here end up hitting up disk among
 		// other things, so are just shunted off to a separate worker so that
 		// packet processing does not get blocked.
+
+		if pkt.mustForward {
+			w.log.Debugf("Dropping client packet: %v (Send to local user)", pkt.id)
+			pkt.dispose()
+			continue
+		}
+
 		panic("BUG: Provider operation not implemented yet")
 
 		// XXX/provider: Handle local user destined packets.

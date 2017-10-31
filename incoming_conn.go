@@ -181,21 +181,13 @@ func (c *incomingConn) worker() {
 			continue
 		}
 
-		if !c.s.cfg.Server.IsProvider {
+		if !c.s.cfg.Server.IsProvider || !c.fromClient {
 			ok = c.onMixCommand(rawCmd)
 		} else {
-			if c.fromClient {
-				// XXX/provider: This is a connection from a client.  It *could*
-				// just be a SendPacket, but it may also be attempting to retreive
-				// from the mail spool.
-				panic("BUG: Provider client operation not implemented yet")
-			} else {
-				// XXX/provider: This is a connection from a mix.  This is
-				// special cased because all incoming mix traffic needs to get
-				// sent to user's spools, and shouldn't be forwarded to the 0th
-				// layer.
-				panic("BUG: Provider mix operation not implemented yet")
-			}
+			// XXX/provider: This is a connection from a client.  It *could*
+			// just be a SendPacket, but it may also be attempting to retreive
+			// from the mail spool.
+			panic("BUG: Provider client operation not implemented yet")
 		}
 		if !ok {
 			// Catastrophic failure in command processing, or a disconnect.
@@ -227,6 +219,13 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	if err := pkt.copyToRaw(cmd.SphinxPacket); err != nil {
 		return err
 	}
+
+	// Providers need to track packets received from other mixes vs
+	// packets received from clients, avoid attempts by the final layer
+	// to try to loop traffic back into the mix net, and sending packets
+	// that bypass the mix net.
+	pkt.mustForward = c.fromClient
+	pkt.mustTerminate = c.s.cfg.Server.IsProvider && !c.fromClient
 
 	c.log.Debugf("Handing off packet: %v", pkt.id)
 
