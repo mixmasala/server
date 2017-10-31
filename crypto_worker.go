@@ -201,6 +201,11 @@ func (w *cryptoWorker) worker() {
 
 			// Check and adjust the delay for queue dwell time.
 			pkt.delay = time.Duration(pkt.nodeDelay.Delay) * time.Millisecond
+			if pkt.delay > numMixKeys*epochtime.Period {
+				w.log.Debugf("Dropping packet: %v (Delay %v is past what is possible)", pkt.id, pkt.delay)
+				pkt.dispose()
+				continue
+			}
 			dwellTime := now - pkt.recvAt
 			if pkt.delay > dwellTime {
 				pkt.delay -= dwellTime
