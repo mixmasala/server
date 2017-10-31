@@ -46,10 +46,17 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	// XXX/provider: Set c.fromClient iff the PeerCredentials belong to a
-	// client.
-	if c.s.cfg.Server.IsProvider {
-		panic("BUG: Provider operation not implemented yet")
+	if c.s.provider != nil {
+		isClient := c.s.provider.authenticateClient(creds)
+		if !isClient && c.fromClient {
+			// This used to be a client, but is no longer listed in
+			// the user db.  Reject.
+			c.canSend = false
+			return false
+		}
+		c.fromClient = true
+		c.canSend = true // Clients can always send for now.
+		return true
 	}
 
 	// Well, the peer has to be a mix since we're not a provider, or the user
@@ -170,13 +177,21 @@ func (c *incomingConn) worker() {
 			continue
 		}
 
-		if !c.s.cfg.Server.IsProvider || !c.fromClient {
+		if !c.s.cfg.Server.IsProvider {
 			ok = c.onMixCommand(rawCmd)
 		} else {
-			// XXX/provider: This is a connection from a client.  It *could*
-			// just be a SendPacket, but it may also be attempting to retreive
-			// from the mail spool.
-			panic("BUG: Provider operation not implemented yet")
+			if c.fromClient {
+				// XXX/provider: This is a connection from a client.  It *could*
+				// just be a SendPacket, but it may also be attempting to retreive
+				// from the mail spool.
+				panic("BUG: Provider client operation not implemented yet")
+			} else {
+				// XXX/provider: This is a connection from a mix.  This is
+				// special cased because all incoming mix traffic needs to get
+				// sent to user's spools, and shouldn't be forwarded to the 0th
+				// layer.
+				panic("BUG: Provider mix operation not implemented yet")
+			}
 		}
 		if !ok {
 			// Catastrophic failure in command processing, or a disconnect.

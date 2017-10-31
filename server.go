@@ -62,6 +62,7 @@ type Server struct {
 	pki           *pki
 	listeners     []*listener
 	connector     *connector
+	provider      *provider
 
 	haltOnce sync.Once
 }
@@ -186,8 +187,9 @@ func (s *Server) halt() {
 	}
 
 	// Provider specific cleanup.
-	if s.cfg.Server.IsProvider {
-		// XXX/provider: Implement.
+	if s.provider != nil {
+		s.provider.halt()
+		s.provider = nil
 	}
 
 	// Stop the PKI interface.
@@ -270,9 +272,11 @@ func New(cfg *config.Config) (*Server, error) {
 	// Initialize the PKI interface.
 	s.pki = newPKI(s)
 
-	// XXX/provider: Initialize the provider backend.
+	// Initialize the provider backend.
 	if s.cfg.Server.IsProvider {
-		return nil, errNotImplemented
+		if s.provider, err = newProvider(s); err != nil {
+			return nil, err
+		}
 	}
 
 	// Initialize and start the the scheduler.
