@@ -18,10 +18,13 @@
 // interface.
 package userdb
 
-import "github.com/katzenpost/core/crypto/ecdh"
+import (
+	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/sphinx/constants"
+)
 
 // MaxUsernameSize is the maximum username length in bytes.
-const MaxUsernameSize = 64
+const MaxUsernameSize = constants.RecipientIDLength
 
 // UserDB is the interface provided by all user database implementations.
 type UserDB interface {

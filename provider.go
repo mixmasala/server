@@ -81,7 +81,7 @@ func (p *provider) worker() {
 		}
 
 		// Fix the recipient by trimming off the trailing NUL bytes.
-		recipient := bytes.Trim(pkt.recipient.ID[:], "\x00")
+		recipient := bytes.TrimRight(pkt.recipient.ID[:], "\x00")
 
 		// Ensure the packet is for a valid recipient.
 		if !p.userDB.Exists(recipient) {
