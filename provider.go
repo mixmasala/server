@@ -54,6 +54,16 @@ func (p *provider) authenticateClient(c *wire.PeerCredentials) bool {
 	return isValid
 }
 
+func (p *provider) onUserPacket(pkt *packet) {
+	// XXX/provider: Implement.
+	panic("BUG: onUserPacket() not implemented yet")
+}
+
+func (p *provider) onSURBReply(pkt *packet) {
+	// XXX/provider: Implement.
+	panic("BUG: onSURBReply() not implemented yet")
+}
+
 func newProvider(s *Server) (*provider, error) {
 	p := new(provider)
 	p.s = s

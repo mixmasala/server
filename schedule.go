@@ -43,6 +43,11 @@ func (sch *scheduler) halt() {
 	sch.ch.Close()
 }
 
+func (sch *scheduler) onPacket(pkt *packet) {
+	ch := sch.ch.In()
+	ch <- pkt
+}
+
 func (sch *scheduler) worker() {
 	q := queue.New()
 	ch := sch.ch.Out()

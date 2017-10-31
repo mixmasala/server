@@ -132,7 +132,6 @@ func (w *cryptoWorker) doUnwrap(pkt *packet) error {
 
 func (w *cryptoWorker) worker() {
 	inCh := w.s.inboundPackets.Out()
-	outCh := w.s.scheduler.ch.In()
 	defer func() {
 		w.derefKeys()
 		w.Done()
@@ -219,7 +218,7 @@ func (w *cryptoWorker) worker() {
 
 			// Hand off to the scheduler.
 			w.log.Debugf("Dispatching packet: %v", pkt.id)
-			outCh <- pkt
+			w.s.scheduler.onPacket(pkt)
 			continue
 		} else if !w.s.cfg.Server.IsProvider {
 			// Mixes will only ever see forward commands.
@@ -239,11 +238,18 @@ func (w *cryptoWorker) worker() {
 			continue
 		}
 
-		panic("BUG: Provider operation not implemented yet")
-
-		// XXX/provider: Handle local user destined packets.
-
-		// XXX/provider: Handle local user destined SURB-ACKs.
+		// Toss the packets over to the provider backend.
+		// Note: Callee takes ownership of pkt.
+		if pkt.isToUser() {
+			w.log.Debugf("Handing off user message packet: %v", pkt.id)
+			w.s.provider.onUserPacket(pkt)
+		} else if pkt.isSURBReply() {
+			w.log.Debugf("Handing off SURBReply packet: %v", pkt.id)
+			w.s.provider.onSURBReply(pkt)
+		} else {
+			w.log.Debugf("Dropping user packet: %v (%v)", pkt.id, pkt.cmdsToString())
+			pkt.dispose()
+		}
 	}
 
 	// NOTREACHED

@@ -176,16 +176,16 @@ func (s *Server) halt() {
 		}
 	}
 
-	// Stop the scheduler.
-	if s.scheduler != nil {
-		s.scheduler.halt()
-		s.scheduler = nil
-	}
-
 	// Provider specific cleanup.
 	if s.provider != nil {
 		s.provider.halt()
 		s.provider = nil
+	}
+
+	// Stop the scheduler.
+	if s.scheduler != nil {
+		s.scheduler.halt()
+		s.scheduler = nil
 	}
 
 	// Stop the PKI interface.
