@@ -55,7 +55,7 @@ type Server struct {
 
 	inboundPackets *channels.InfiniteChannel
 
-	scheduler     *serverScheduler
+	scheduler     *scheduler
 	cryptoWorkers []*cryptoWorker
 	periodic      *periodicTimer
 	mixKeys       *mixKeys

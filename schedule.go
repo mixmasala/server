@@ -27,7 +27,7 @@ import (
 	"github.com/op/go-logging"
 )
 
-type serverScheduler struct {
+type scheduler struct {
 	sync.WaitGroup
 
 	s   *Server
@@ -37,13 +37,13 @@ type serverScheduler struct {
 	haltCh chan interface{}
 }
 
-func (sch *serverScheduler) halt() {
+func (sch *scheduler) halt() {
 	close(sch.haltCh)
 	sch.Wait()
 	sch.ch.Close()
 }
 
-func (sch *serverScheduler) worker() {
+func (sch *scheduler) worker() {
 	q := queue.New()
 	ch := sch.ch.Out()
 	timerSlack := time.Duration(sch.s.cfg.Debug.SchedulerSlack) * time.Millisecond
@@ -142,8 +142,8 @@ func (sch *serverScheduler) worker() {
 	// NOTREACHED
 }
 
-func newScheduler(s *Server) *serverScheduler {
-	sch := new(serverScheduler)
+func newScheduler(s *Server) *scheduler {
+	sch := new(scheduler)
 	sch.s = s
 	sch.log = s.newLogger("scheduler")
 	sch.ch = channels.NewInfiniteChannel()
