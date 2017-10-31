@@ -220,7 +220,7 @@ func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {
 
 func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 	// XXX/provider: Implement this.
-	return errNotImplemented
+	panic("BUG: Provider RetrieveMessage support not implemented yet.")
 }
 
 func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
@@ -235,6 +235,9 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	// that bypass the mix net.
 	pkt.mustForward = c.fromClient
 	pkt.mustTerminate = c.s.cfg.Server.IsProvider && !c.fromClient
+
+	// TODO: If clients should be rate-limited in how fast they can send
+	// packets, this is probably the natural place to do so.
 
 	c.log.Debugf("Handing off packet: %v", pkt.id)
 

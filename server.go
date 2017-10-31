@@ -35,13 +35,9 @@ import (
 
 const fileMode = 0600
 
-var (
-	// ErrGenerateOnly is the error returned when the server initialization
-	// terminates due to the `GenerateOnly` debug config option.
-	ErrGenerateOnly = errors.New("server: GenerateOnly set")
-
-	errNotImplemented = errors.New("server: Not implemented yet")
-)
+// ErrGenerateOnly is the error returned when the server initialization
+// terminates due to the `GenerateOnly` debug config option.
+var ErrGenerateOnly = errors.New("server: GenerateOnly set")
 
 // Server is a Katzenpost server instance.
 type Server struct {
@@ -275,6 +271,7 @@ func New(cfg *config.Config) (*Server, error) {
 	// Initialize the provider backend.
 	if s.cfg.Server.IsProvider {
 		if s.provider, err = newProvider(s); err != nil {
+			s.log.Errorf("Failed to initialize provider backend: %v", err)
 			return nil, err
 		}
 	}
