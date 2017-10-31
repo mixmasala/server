@@ -145,7 +145,7 @@ func (p *provider) onToUser(pkt *packet, recipient []byte) {
 	switch b[0] {
 	case flagsPadding:
 	case flagsSURB:
-		surb = b[2:hdrLength]
+		surb = b[constants.SphinxPlaintextHeaderLength:hdrLength]
 	default:
 		p.log.Debugf("Dropping packet: %v (Invalid message flags: 0x%02x)", pkt.id, b[0])
 		return
@@ -188,6 +188,9 @@ func (p *provider) onToUser(pkt *packet, recipient []byte) {
 		ackPkt.recvAt = pkt.recvAt
 		ackPkt.delay = pkt.delay
 		ackPkt.mustForward = true
+
+		// XXX: This should probably fudge the delay to account for processing
+		// time.
 
 		// Send the SURB-ACK off to the scheduler.
 		p.log.Debugf("Handing off user destined SURB-ACK: %v (Src:%v)", ackPkt.id, pkt.id)
