@@ -25,6 +25,9 @@ const MaxUsernameSize = 64
 
 // UserDB is the interface provided by all user database implementations.
 type UserDB interface {
+	// Exists returns true iff the user identified by the username exists.
+	Exists([]byte) bool
+
 	// IsValid returns true iff the user identified by the username and
 	// public key is valid.
 	IsValid([]byte, *ecdh.PublicKey) bool

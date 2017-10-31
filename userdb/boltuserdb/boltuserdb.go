@@ -33,6 +33,31 @@ type boltUserDB struct {
 	db *bolt.DB
 }
 
+func (d *boltUserDB) Exists(u []byte) bool {
+	// Reject pathologically malformed usernames.
+	if u == nil || len(u) > userdb.MaxUsernameSize {
+		return false
+	}
+
+	// Query the database to see if the user is present.
+	// keys match.
+	isExists := false
+	if err := d.db.View(func(tx *bolt.Tx) error {
+		// Grab the `users` bucket.
+		bkt := tx.Bucket([]byte(usersBucket))
+		if bkt == nil {
+			panic("BUG: userdb: `users` bucket is missing")
+		}
+
+		isExists = bkt.Get(u) != nil
+		return nil
+	}); err != nil {
+		return false
+	}
+
+	return isExists
+}
+
 func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 	// Reject pathologically malformed arguments.
 	if u == nil || len(u) > userdb.MaxUsernameSize || k == nil {
