@@ -17,8 +17,10 @@
 package server
 
 import (
+	"bytes"
 	"sync"
 
+	"github.com/eapache/channels"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/server/userdb"
 	"github.com/katzenpost/server/userdb/boltuserdb"
@@ -29,6 +31,7 @@ type provider struct {
 	sync.WaitGroup
 
 	s      *Server
+	ch     *channels.InfiniteChannel
 	userDB userdb.UserDB
 	log    *logging.Logger
 
@@ -39,6 +42,7 @@ func (p *provider) halt() {
 	close(p.haltCh)
 	p.Wait()
 
+	p.ch.Close()
 	if p.userDB != nil {
 		p.userDB.Close()
 		p.userDB = nil
@@ -54,19 +58,47 @@ func (p *provider) authenticateClient(c *wire.PeerCredentials) bool {
 	return isValid
 }
 
-func (p *provider) onUserPacket(pkt *packet) {
-	// XXX/provider: Implement.
-	panic("BUG: onUserPacket() not implemented yet")
+func (p *provider) onPacket(pkt *packet) {
+	ch := p.ch.In()
+	ch <- pkt
 }
 
-func (p *provider) onSURBReply(pkt *packet) {
-	// XXX/provider: Implement.
-	panic("BUG: onSURBReply() not implemented yet")
+func (p *provider) worker() {
+	defer func() {
+		p.log.Debugf("Halting Provider worker.")
+		p.Done()
+	}()
+
+	ch := p.ch.Out()
+
+	for {
+		var pkt *packet
+		select {
+		case <-p.haltCh:
+			p.log.Debugf("Terminating gracefully.")
+		case e := <-ch:
+			pkt = e.(*packet)
+		}
+
+		// Fix the recipient by trimming off the trailing NUL bytes.
+		recipient := bytes.Trim(pkt.recipient.ID[:], "\x00")
+
+		// Ensure the packet is for a valid recipient.
+		if !p.userDB.Exists(recipient) {
+			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.id, asciiBytesToPrintString(recipient))
+			pkt.dispose()
+			continue
+		}
+
+		// XXX/provider: Implement the rest.
+		panic("BUG: Provider inbound packet processing is incomplete")
+	}
 }
 
 func newProvider(s *Server) (*provider, error) {
 	p := new(provider)
 	p.s = s
+	p.ch = channels.NewInfiniteChannel()
 	p.log = s.newLogger("provider")
 	p.haltCh = make(chan interface{})
 
@@ -76,5 +108,7 @@ func newProvider(s *Server) (*provider, error) {
 		return nil, err
 	}
 
+	p.Add(1)
+	go p.worker()
 	return p, nil
 }

@@ -87,7 +87,7 @@ func (sch *scheduler) worker() {
 				q.Enqueue(uint64(monotime.Now()+pkt.delay), pkt)
 			} else {
 				sID := nodeIDToPrintString(&pkt.nextNodeHop.ID)
-				sch.log.Debugf("Dropping packet: %v Next hop is invalid: %v", pkt.id, sID)
+				sch.log.Debugf("Dropping packet: %v (Next hop is invalid: %v)", pkt.id, sID)
 				pkt.dispose()
 			}
 		case <-timer.C:

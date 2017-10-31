@@ -240,12 +240,9 @@ func (w *cryptoWorker) worker() {
 
 		// Toss the packets over to the provider backend.
 		// Note: Callee takes ownership of pkt.
-		if pkt.isToUser() {
-			w.log.Debugf("Handing off user message packet: %v", pkt.id)
-			w.s.provider.onUserPacket(pkt)
-		} else if pkt.isSURBReply() {
-			w.log.Debugf("Handing off SURBReply packet: %v", pkt.id)
-			w.s.provider.onSURBReply(pkt)
+		if pkt.isToUser() || pkt.isSURBReply() {
+			w.log.Debugf("Handing off user destined packet: %v", pkt.id)
+			w.s.provider.onPacket(pkt)
 		} else {
 			w.log.Debugf("Dropping user packet: %v (%v)", pkt.id, pkt.cmdsToString())
 			pkt.dispose()
