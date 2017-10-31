@@ -181,15 +181,17 @@ func (c *incomingConn) worker() {
 			continue
 		}
 
-		if !c.s.cfg.Server.IsProvider || !c.fromClient {
-			ok = c.onMixCommand(rawCmd)
-		} else {
-			// XXX/provider: This is a connection from a client.  It *could*
-			// just be a SendPacket, but it may also be attempting to retreive
-			// from the mail spool.
-			panic("BUG: Provider client operation not implemented yet")
+		if c.fromClient {
+			if retrCmd, ok := rawCmd.(*commands.RetrieveMessage); ok {
+				if err := c.onRetrieveMessage(retrCmd); err != nil {
+					return
+				}
+				continue
+			}
 		}
-		if !ok {
+
+		// The command is not a RetreiveMessage from a client, handle it.
+		if !c.onMixCommand(rawCmd) {
 			// Catastrophic failure in command processing, or a disconnect.
 			return
 		}
@@ -200,6 +202,8 @@ func (c *incomingConn) worker() {
 
 func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {
 	switch cmd := rawCmd.(type) {
+	case *commands.NoOp:
+		return true
 	case *commands.SendPacket:
 		err := c.onSendPacket(cmd)
 		if err == nil {
@@ -209,9 +213,14 @@ func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {
 	case *commands.Disconnect:
 		c.log.Debugf("Received disconnect from peer.")
 	default:
-		c.log.Debugf("Received unexpected mix command: %t", cmd)
+		c.log.Debugf("Received unexpected command: %t", cmd)
 	}
 	return false
+}
+
+func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
+	// XXX/provider: Implement this.
+	return errNotImplemented
 }
 
 func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
