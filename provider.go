@@ -97,9 +97,6 @@ func (p *provider) worker() {
 		recipient := bytes.TrimRight(pkt.recipient.ID[:], "\x00")
 
 		// Ensure the packet is for a valid recipient.
-		//
-		// TODO/perf: This might be better off in the crypto worker since the
-		// db calls can be concurrent by virtue of being a read operation.
 		if !p.userDB.Exists(recipient) {
 			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.id, asciiBytesToPrintString(recipient))
 			pkt.dispose()
