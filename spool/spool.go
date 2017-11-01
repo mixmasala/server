@@ -18,9 +18,7 @@
 // interface.
 package spool
 
-import (
-	"github.com/katzenpost/core/sphinx/constants"
-)
+import "github.com/katzenpost/core/sphinx/constants"
 
 // Spool is the interface provided by all user messgage spool implementations.
 type Spool interface {
@@ -29,6 +27,10 @@ type Spool interface {
 
 	// StoreSURBReply stores a SURBReply in the user's spool.
 	StoreSURBReply(user []byte, id *[constants.SURBIDLength]byte, msg []byte) error
+
+	// Get optionally deletes the first entry in a user's spool, and returns
+	// the (new) first entry.  Both messages and SURBReplies may be returned.
+	Get(user []byte, advance bool) (msg, surbID []byte, err error)
 
 	// Close closes the Spool instance.
 	Close()
