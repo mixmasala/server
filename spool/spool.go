@@ -30,7 +30,7 @@ type Spool interface {
 
 	// Get optionally deletes the first entry in a user's spool, and returns
 	// the (new) first entry.  Both messages and SURBReplies may be returned.
-	Get(user []byte, advance bool) (msg, surbID []byte, err error)
+	Get(user []byte, advance bool) (msg, surbID []byte, remaining int, err error)
 
 	// Close closes the Spool instance.
 	Close()
