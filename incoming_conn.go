@@ -19,6 +19,7 @@ package server
 import (
 	"container/list"
 	"fmt"
+	"math"
 	"net"
 	"sync/atomic"
 	"time"
@@ -41,12 +42,14 @@ type incomingConn struct {
 	log *logging.Logger
 
 	id         uint64
+	retrSeq    uint32
 	fromClient bool
+	fromMix    bool
 	canSend    bool
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	if c.s.provider != nil {
+	if c.s.provider != nil && !c.fromMix {
 		isClient := c.s.provider.authenticateClient(creds)
 		if !isClient && c.fromClient {
 			// This used to be a client, but is no longer listed in
@@ -68,6 +71,9 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	c.fromClient = false
 	isValid := false
 	c.canSend, isValid = c.s.pki.authenticateIncoming(creds)
+	if isValid {
+		c.fromMix = true
+	}
 	return isValid
 }
 
@@ -182,6 +188,7 @@ func (c *incomingConn) worker() {
 		}
 
 		if c.fromClient {
+			// The only command specific to a client is RetreiveMessage.
 			if retrCmd, ok := rawCmd.(*commands.RetrieveMessage); ok {
 				if err := c.onRetrieveMessage(retrCmd); err != nil {
 					return
@@ -190,7 +197,7 @@ func (c *incomingConn) worker() {
 			}
 		}
 
-		// The command is not a RetreiveMessage from a client, handle it.
+		// Handle all of the common commands.
 		if !c.onMixCommand(rawCmd) {
 			// Catastrophic failure in command processing, or a disconnect.
 			return
@@ -219,8 +226,58 @@ func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {
 }
 
 func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
-	// XXX/provider: Implement this.
-	panic("BUG: Provider RetrieveMessage support not implemented yet.")
+	advance := false
+	switch cmd.Sequence {
+	case c.retrSeq:
+		c.log.Debugf("RetrieveMessage: %d", cmd.Sequence)
+	case c.retrSeq + 1:
+		c.log.Debugf("RetriveMessage: %d (Popping head)", cmd.Sequence)
+		c.retrSeq++ // Advance the sequence number.
+		advance = true
+	default:
+		c.log.Debugf("Invalid RetrieveMessage sequence: %d", cmd.Sequence)
+		return fmt.Errorf("provider: RetrieveMessage out of sequence: %d", cmd.Sequence)
+	}
+
+	// Get the message from the user's spool, advancing as appropriate.
+	msg, surbID, remaining, err := c.s.provider.spool.Get(c.w.PeerCredentials().AdditionalData, advance)
+	if err != nil {
+		return err
+	}
+	if remaining > math.MaxUint8 {
+		// The count hint is an 8 bit value and is clamped.
+		remaining = math.MaxUint8
+	}
+	hint := uint8(remaining)
+
+	var respCmd commands.Command
+	if surbID != nil {
+		// This was a SURBReply.
+		surbCmd := &commands.MessageACK{
+			QueueSizeHint: hint,
+			Sequence:      cmd.Sequence,
+			Payload:       msg,
+		}
+		copy(surbCmd.ID[:], surbID)
+		respCmd = surbCmd
+	} else if msg != nil {
+		// This was a message.
+		respCmd = &commands.Message{
+			QueueSizeHint: hint,
+			Sequence:      cmd.Sequence,
+			Payload:       msg,
+		}
+	} else {
+		// Queue must be empty.
+		if hint != 0 {
+			panic("BUG: Get() failed to return a message, and the queue is not empty.")
+		}
+		respCmd = &commands.MessageEmpty{
+			Sequence: cmd.Sequence,
+		}
+	}
+
+	return c.w.SendCommand(respCmd)
 }
 
 func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
