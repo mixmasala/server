@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/wire"
@@ -191,6 +192,7 @@ func (c *incomingConn) worker() {
 			// The only command specific to a client is RetreiveMessage.
 			if retrCmd, ok := rawCmd.(*commands.RetrieveMessage); ok {
 				if err := c.onRetrieveMessage(retrCmd); err != nil {
+					c.log.Debugf("Failed to handle RetreiveMessage: %v", err)
 					return
 				}
 				continue
@@ -235,7 +237,6 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		c.retrSeq++ // Advance the sequence number.
 		advance = true
 	default:
-		c.log.Debugf("Invalid RetrieveMessage sequence: %d", cmd.Sequence)
 		return fmt.Errorf("provider: RetrieveMessage out of sequence: %d", cmd.Sequence)
 	}
 
@@ -260,12 +261,19 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		}
 		copy(surbCmd.ID[:], surbID)
 		respCmd = surbCmd
+
+		if len(msg) != constants.ForwardPayloadLength {
+			return fmt.Errorf("stored SURBReply payload is mis-sized: %v", len(msg))
+		}
 	} else if msg != nil {
 		// This was a message.
 		respCmd = &commands.Message{
 			QueueSizeHint: hint,
 			Sequence:      cmd.Sequence,
 			Payload:       msg,
+		}
+		if len(msg) != constants.UserForwardPayloadLength {
+			return fmt.Errorf("stored user payload is mis-sized: %v", len(msg))
 		}
 	} else {
 		// Queue must be empty.

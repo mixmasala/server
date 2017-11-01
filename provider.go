@@ -118,6 +118,11 @@ func (p *provider) worker() {
 }
 
 func (p *provider) onSURBReply(pkt *packet, recipient []byte) {
+	if len(pkt.payload) != constants.ForwardPayloadLength {
+		p.log.Debugf("Refusing to store mis-sized SURB-Reply: %v", len(pkt.payload))
+		return
+	}
+
 	// Store the payload in the spool.
 	if err := p.spool.StoreSURBReply(recipient, &pkt.surbReply.ID, pkt.payload); err != nil {
 		p.log.Debugf("Failed to store SURBReply: %v (%v)", pkt.id, err)
@@ -152,6 +157,10 @@ func (p *provider) onToUser(pkt *packet, recipient []byte) {
 		surb = b[constants.SphinxPlaintextHeaderLength:hdrLength]
 	default:
 		p.log.Debugf("Dropping packet: %v (Invalid message flags: 0x%02x)", pkt.id, b[0])
+		return
+	}
+	if len(ct) != constants.UserForwardPayloadLength {
+		p.log.Debugf("Refusing to store mis-sized user payload: %v", len(ct))
 		return
 	}
 
