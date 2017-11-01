@@ -39,7 +39,7 @@ type boltUserDB struct {
 
 func (d *boltUserDB) Exists(u []byte) bool {
 	// Reject pathologically malformed usernames.
-	if u == nil || len(u) > userdb.MaxUsernameSize {
+	if len(u) == 0 || len(u) > userdb.MaxUsernameSize {
 		return false
 	}
 
@@ -53,7 +53,7 @@ func (d *boltUserDB) Exists(u []byte) bool {
 
 func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 	// Reject pathologically malformed arguments.
-	if u == nil || len(u) > userdb.MaxUsernameSize || k == nil {
+	if len(u) == 0 || len(u) > userdb.MaxUsernameSize || k == nil {
 		return false
 	}
 
@@ -80,7 +80,7 @@ func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 }
 
 func (d *boltUserDB) Add(u []byte, k *ecdh.PublicKey) error {
-	if u == nil || len(u) > userdb.MaxUsernameSize {
+	if len(u) == 0 || len(u) > userdb.MaxUsernameSize {
 		return fmt.Errorf("userdb: invalid username: `%v`", u)
 	}
 	if k == nil {
@@ -110,7 +110,7 @@ func (d *boltUserDB) Add(u []byte, k *ecdh.PublicKey) error {
 }
 
 func (d *boltUserDB) Remove(u []byte) error {
-	if u == nil || len(u) > userdb.MaxUsernameSize {
+	if len(u) == 0 || len(u) > userdb.MaxUsernameSize {
 		return fmt.Errorf("userdb: invalid username: `%v`", u)
 	}
 
