@@ -63,9 +63,6 @@ func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 	if err := d.db.View(func(tx *bolt.Tx) error {
 		// Grab the `users` bucket.
 		bkt := tx.Bucket([]byte(usersBucket))
-		if bkt == nil {
-			panic("BUG: userdb: `users` bucket is missing")
-		}
 
 		// If the user exists in the `users` bucket, then compare public keys.
 		rawPubKey := bkt.Get(u)
@@ -90,9 +87,6 @@ func (d *boltUserDB) Add(u []byte, k *ecdh.PublicKey) error {
 	err := d.db.Update(func(tx *bolt.Tx) error {
 		// Grab the `users` bucket.
 		bkt := tx.Bucket([]byte(usersBucket))
-		if bkt == nil {
-			panic("BUG: userdb: `users` bucket is missing")
-		}
 
 		// And add or update the user's entry.
 		return bkt.Put(u, k.Bytes())
@@ -117,9 +111,6 @@ func (d *boltUserDB) Remove(u []byte) error {
 	err := d.db.Update(func(tx *bolt.Tx) error {
 		// Grab the `users` bucket.
 		bkt := tx.Bucket([]byte(usersBucket))
-		if bkt == nil {
-			panic("BUG: userdb: `users` bucket is missing")
-		}
 
 		// Delete the user's entry.
 		return bkt.Delete(u)
