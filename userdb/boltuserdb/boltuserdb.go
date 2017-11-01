@@ -21,6 +21,7 @@ package boltuserdb
 import (
 	"crypto/subtle"
 	"fmt"
+	"sync"
 
 	bolt "github.com/coreos/bbolt"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -30,7 +31,10 @@ import (
 const usersBucket = "users"
 
 type boltUserDB struct {
-	db *bolt.DB
+	sync.RWMutex
+
+	db        *bolt.DB
+	userCache map[[userdb.MaxUsernameSize]byte]bool
 }
 
 func (d *boltUserDB) Exists(u []byte) bool {
@@ -39,23 +43,12 @@ func (d *boltUserDB) Exists(u []byte) bool {
 		return false
 	}
 
-	// Query the database to see if the user is present.
-	// keys match.
-	isExists := false
-	if err := d.db.View(func(tx *bolt.Tx) error {
-		// Grab the `users` bucket.
-		bkt := tx.Bucket([]byte(usersBucket))
-		if bkt == nil {
-			panic("BUG: userdb: `users` bucket is missing")
-		}
+	k := userToCacheKey(u)
 
-		isExists = bkt.Get(u) != nil
-		return nil
-	}); err != nil {
-		return false
-	}
+	d.RLock()
+	defer d.RUnlock()
 
-	return isExists
+	return d.userCache[k]
 }
 
 func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
@@ -83,7 +76,6 @@ func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 	}); err != nil {
 		return false
 	}
-
 	return isValid
 }
 
@@ -105,6 +97,15 @@ func (d *boltUserDB) Add(u []byte, k *ecdh.PublicKey) error {
 		// And add or update the user's entry.
 		return bkt.Put(u, k.Bytes())
 	})
+	if err == nil {
+		k := userToCacheKey(u)
+
+		d.Lock()
+		defer d.Unlock()
+
+		d.userCache[k] = true
+	}
+
 	return err
 }
 
@@ -123,6 +124,14 @@ func (d *boltUserDB) Remove(u []byte) error {
 		// Delete the user's entry.
 		return bkt.Delete(u)
 	})
+	if err == nil {
+		k := userToCacheKey(u)
+
+		d.Lock()
+		defer d.Unlock()
+
+		delete(d.userCache, k)
+	}
 	return err
 }
 
@@ -145,6 +154,7 @@ func New(f string) (userdb.UserDB, error) {
 	if err != nil {
 		return nil, err
 	}
+	d.userCache = make(map[[userdb.MaxUsernameSize]byte]bool)
 
 	if err = d.db.Update(func(tx *bolt.Tx) error {
 		// Ensure that all the buckets exists, and grab the metadata bucket.
@@ -161,6 +171,15 @@ func New(f string) (userdb.UserDB, error) {
 			if len(b) != 1 || b[0] != 0 {
 				return fmt.Errorf("userdb: incompatible version: %d", uint(b[0]))
 			}
+
+			// Populate the user cache.
+			bkt = tx.Bucket([]byte(usersBucket))
+			bkt.ForEach(func(k, v []byte) error {
+				u := userToCacheKey(k)
+				d.userCache[u] = true
+				return nil
+			})
+
 			return nil
 		}
 
@@ -175,4 +194,10 @@ func New(f string) (userdb.UserDB, error) {
 	}
 
 	return d, nil
+}
+
+func userToCacheKey(u []byte) [userdb.MaxUsernameSize]byte {
+	var k [userdb.MaxUsernameSize]byte
+	copy(k[:], u)
+	return k
 }

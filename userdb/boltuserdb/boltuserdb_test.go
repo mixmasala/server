@@ -41,7 +41,7 @@ var (
 func TestBoltUserDB(t *testing.T) {
 	t.Logf("Temp Dir: %v", tmpDir)
 	if ok := t.Run("create", doTestCreate); ok {
-
+		t.Run("load", doTestLoad)
 	} else {
 		t.Errorf("create tests failed, skipping load test")
 	}
