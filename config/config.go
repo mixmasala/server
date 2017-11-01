@@ -39,6 +39,7 @@ const (
 	defaultHandshakeTimeout = 30 * 1000 // 30 sec.
 	defaultReauthInterval   = 30 * 1000 // 30 sec.
 	defaultUserDB           = "users.db"
+	defaultSpoolDB          = "spool.db"
 )
 
 var defaultLogging = Logging{
@@ -196,11 +197,18 @@ type Provider struct {
 	// UserDB is the path to the user database.  If left empty it will use
 	// `users.db` under the DataDir.
 	UserDB string
+
+	// SpoolDB is the path to the user message spool.  If left empty, it will
+	// use `spool.db` under the DataDir.
+	SpoolDB string
 }
 
 func (pCfg *Provider) applyDefaults(sCfg *Server) {
 	if pCfg.UserDB == "" {
 		pCfg.UserDB = filepath.Join(sCfg.DataDir, defaultUserDB)
+	}
+	if pCfg.SpoolDB == "" {
+		pCfg.SpoolDB = filepath.Join(sCfg.DataDir, defaultSpoolDB)
 	}
 }
 

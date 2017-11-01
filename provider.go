@@ -26,6 +26,7 @@ import (
 	"github.com/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/server/spool"
+	"github.com/katzenpost/server/spool/boltspool"
 	"github.com/katzenpost/server/userdb"
 	"github.com/katzenpost/server/userdb/boltuserdb"
 	"github.com/op/go-logging"
@@ -226,8 +227,11 @@ func newProvider(s *Server) (*provider, error) {
 		return nil, err
 	}
 
-	// XXX/provider: Initialize the spool.
-	panic("BUG: Message spool initialization not done yet.")
+	p.spool, err = boltspool.New(p.s.cfg.Provider.SpoolDB)
+	if err != nil {
+		p.userDB.Close()
+		return nil, err
+	}
 
 	p.Add(1)
 	go p.worker()
