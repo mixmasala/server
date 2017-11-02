@@ -78,8 +78,12 @@ func (s *boltSpool) doStore(u []byte, id *[sConstants.SURBIDLength]byte, msg []b
 		}
 
 		// Allocate a unique identifier for this message.
+		seq, err := sBkt.NextSequence()
+		if err != nil {
+			return err
+		}
 		var msgID [8]byte
-		binary.BigEndian.PutUint64(msgID[:], sBkt.Sequence())
+		binary.BigEndian.PutUint64(msgID[:], seq)
 
 		// Create a bucket for this message.
 		mBkt, err := sBkt.CreateBucket(msgID[:])
