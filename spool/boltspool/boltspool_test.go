@@ -116,6 +116,10 @@ func doTestLoad(t *testing.T) {
 	assert.Nil(msg, "Loaded Empty")
 	assert.Nil(id, "Loaded Empty SURB ID")
 	assert.Equal(0, remaining, "Should be 0 since the queue is empty")
+
+	// Delete the user's spool.
+	err = s.Remove([]byte(testUser))
+	assert.NoError(err, "Delete(u)")
 }
 
 func init() {

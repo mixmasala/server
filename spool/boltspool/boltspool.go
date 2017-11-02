@@ -173,6 +173,42 @@ func (s *boltSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining i
 	return
 }
 
+func (s *boltSpool) Remove(u []byte) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		// Grab the `users` bucket.
+		uBkt := tx.Bucket([]byte(usersBucket))
+
+		// Grab the user's spool bucket.
+		sBkt := uBkt.Bucket(u)
+		if sBkt == nil {
+			// If the user's spool bucket is missing, just return.
+			return nil
+		}
+
+		return uBkt.DeleteBucket(u)
+	})
+}
+
+func (s *boltSpool) Vaccum(udb userdb.UserDB) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		// Grab the `users` bucket.
+		uBkt := tx.Bucket([]byte(usersBucket))
+
+		cur := uBkt.Cursor()
+		for u, _ := cur.First(); u != nil; u, _ = cur.Next() {
+			// Note: If the provided UserDB doesn't do something intelligent
+			// like cache the valid users, this will really suck.
+			if udb.Exists(u) {
+				continue
+			}
+			if err := uBkt.DeleteBucket(u); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // New creates (or loads) a user message spool with the given file name f.
 func New(f string) (spool.Spool, error) {
 	const (

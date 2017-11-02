@@ -18,7 +18,10 @@
 // interface.
 package spool
 
-import "github.com/katzenpost/core/sphinx/constants"
+import (
+	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/server/userdb"
+)
 
 // Spool is the interface provided by all user messgage spool implementations.
 type Spool interface {
@@ -31,6 +34,13 @@ type Spool interface {
 	// Get optionally deletes the first entry in a user's spool, and returns
 	// the (new) first entry.  Both messages and SURBReplies may be returned.
 	Get(u []byte, advance bool) (msg, surbID []byte, remaining int, err error)
+
+	// Remove removes the spool identified by the username from the database.
+	Remove(u []byte) error
+
+	// Vaccum removes the spools that do not correspond to valid users in the
+	// provided UserDB.
+	Vaccum(udb userdb.UserDB) error
 
 	// Close closes the Spool instance.
 	Close()
