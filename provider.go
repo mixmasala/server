@@ -233,6 +233,13 @@ func newProvider(s *Server) (*provider, error) {
 		return nil, err
 	}
 
+	// Purge spools that belong to users that no longer exist in the user db.
+	if err = p.spool.Vaccum(p.userDB); err != nil {
+		p.spool.Close()
+		p.userDB.Close()
+		return nil, err
+	}
+
 	p.Add(1)
 	go p.worker()
 	return p, nil
