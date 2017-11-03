@@ -28,6 +28,10 @@ import (
 	"github.com/op/go-logging"
 )
 
+const (
+	cmdQuit = "QUIT"
+)
+
 // StatusCode is a thwack status code.
 type StatusCode int
 
@@ -137,7 +141,7 @@ func (s *Server) Start() error {
 // RegisterCommand sets the handler function for the specified command.
 // This MUST NOT be called after the Server has been started with Start().
 func (s *Server) RegisterCommand(cmd string, fn CommandHandlerFn) {
-	s.handlers[cmd] = fn
+	s.handlers[strings.ToUpper(cmd)] = fn
 }
 
 func (s *Server) onCommand(c *Conn, l string) error {
@@ -167,6 +171,12 @@ func (s *Server) Halt() {
 	s.Wait()
 }
 
+func cmdQuitImpl(c *Conn, l string) error {
+	// Ignore the error writing the reply since we're disconnecting anyway.
+	c.WriteReply(StatusOk)
+	return fmt.Errorf("peer requested disconnection")
+}
+
 // New constructs a new Server, but does not start the listener.
 func New(cfg *Config) (*Server, error) {
 	s := new(Server)
@@ -174,6 +184,8 @@ func New(cfg *Config) (*Server, error) {
 	s.log = cfg.NewLoggerFn(cfg.LogModule)
 	s.handlers = make(map[string]CommandHandlerFn)
 	s.closeAllCh = make(chan interface{})
+
+	s.RegisterCommand(cmdQuit, cmdQuitImpl)
 
 	return s, nil
 }
