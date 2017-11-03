@@ -116,8 +116,10 @@ func (s *Server) initLogging() error {
 	// the server logger.
 	//
 	// TODO: Maybe use a custom backend to support rotating the log file.
+	logFmt := logging.MustStringFormatter("%{time:15:04:05.000} %{level:.4s} %{module}: %{message}")
 	b := logging.NewLogBackend(f, "", 0)
-	bl := logging.AddModuleLevel(b)
+	bFmt := logging.NewBackendFormatter(b, logFmt)
+	bl := logging.AddModuleLevel(bFmt)
 	s.logBackend = bl
 	s.logBackend.SetLevel(logLevelFromString(s.cfg.Logging.Level), "")
 	s.log = s.newLogger("server")
