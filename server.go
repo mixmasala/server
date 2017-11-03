@@ -230,7 +230,7 @@ func New(cfg *config.Config) (*Server, error) {
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")
 	}
-	s.log.Notice("Server identifier is: '%v'", s.cfg.Server.Identifier)
+	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
 
 	// Initialize the server identity and link keys.
 	if err := s.initIdentity(); err != nil {
