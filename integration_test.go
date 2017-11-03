@@ -34,7 +34,7 @@ func TestClientServerIntegration(t *testing.T) {
 	const basicConfig = `# A basic configuration example.
 [server]
 Identifier = "katzenpost.example.com"
-Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
+Addresses = [ "127.0.0.1:29483" ]
 DataDir = "%s"
 IsProvider = true
 
