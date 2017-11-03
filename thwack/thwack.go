@@ -165,10 +165,10 @@ func (s *Server) onCommand(c *Conn, l string) error {
 func (s *Server) Halt() {
 	if s.l != nil {
 		s.l.Close()
-		s.l = nil
 		close(s.closeAllCh)
 	}
 	s.Wait()
+	s.l = nil
 }
 
 func cmdQuitImpl(c *Conn, l string) error {
