@@ -30,6 +30,7 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/server/config"
+	"github.com/katzenpost/server/thwack"
 	"github.com/op/go-logging"
 )
 
@@ -59,6 +60,7 @@ type Server struct {
 	listeners     []*listener
 	connector     *connector
 	provider      *provider
+	management    *thwack.Server
 
 	haltOnce sync.Once
 }
@@ -114,8 +116,10 @@ func (s *Server) initLogging() error {
 	// the server logger.
 	//
 	// TODO: Maybe use a custom backend to support rotating the log file.
+	logFmt := logging.MustStringFormatter("%{time:15:04:05.000} %{level:.4s} %{module}: %{message}")
 	b := logging.NewLogBackend(f, "", 0)
-	bl := logging.AddModuleLevel(b)
+	bFmt := logging.NewBackendFormatter(b, logFmt)
+	bl := logging.AddModuleLevel(bFmt)
 	s.logBackend = bl
 	s.logBackend.SetLevel(logLevelFromString(s.cfg.Logging.Level), "")
 	s.log = s.newLogger("server")
@@ -152,6 +156,12 @@ func (s *Server) halt() {
 	if s.periodic != nil {
 		s.periodic.halt()
 		s.periodic = nil
+	}
+
+	// Stop the management interface.
+	if s.management != nil {
+		s.management.Halt()
+		s.management = nil
 	}
 
 	// Stop the listener(s), close all incoming connections.
@@ -230,7 +240,7 @@ func New(cfg *config.Config) (*Server, error) {
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")
 	}
-	s.log.Notice("Server identifier is: '%v'", s.cfg.Server.Identifier)
+	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
 
 	// Initialize the server identity and link keys.
 	if err := s.initIdentity(); err != nil {
@@ -263,6 +273,23 @@ func New(cfg *config.Config) (*Server, error) {
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
+	}
+
+	// Initialize the management interface if enabled.
+	//
+	// Note: This is done first so that other subsystems may register commands.
+	if s.cfg.Management.Enable {
+		mgmtCfg := &thwack.Config{
+			Net:         "unix",
+			Addr:        s.cfg.Management.Path,
+			ServiceName: s.cfg.Server.Identifier + " Katzenpost Server",
+			LogModule:   "mgmt",
+			NewLoggerFn: s.newLogger,
+		}
+		if s.management, err = thwack.New(mgmtCfg); err != nil {
+			s.log.Errorf("Failed to initialize management interface: %v", err)
+			return nil, err
+		}
 	}
 
 	// Initialize the PKI interface.
@@ -305,6 +332,13 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Start the periodic 1 Hz utility timer.
 	s.periodic = newPeriodicTimer(s)
+
+	// Start listening on the management interface if enabled, now that every
+	// subsystem that wants to register commands has had the opportunity to do
+	// so.
+	if s.management != nil {
+		s.management.Start()
+	}
 
 	isOk = true
 	return s, nil

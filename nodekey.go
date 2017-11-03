@@ -40,7 +40,7 @@ func (s *Server) initIdentity() error {
 	if buf, err := ioutil.ReadFile(fn); err == nil {
 		defer utils.ExplicitBzero(buf)
 		blk, rest := pem.Decode(buf)
-		if rest != nil {
+		if len(rest) != 0 {
 			return fmt.Errorf("trailing garbage after identity private key")
 		}
 		if blk.Type != keyType {
@@ -78,7 +78,7 @@ func (s *Server) initLink() error {
 	if buf, err := ioutil.ReadFile(fn); err == nil {
 		defer utils.ExplicitBzero(buf)
 		blk, rest := pem.Decode(buf)
-		if rest != nil {
+		if len(rest) != 0 {
 			return fmt.Errorf("trailing garbage after link private key")
 		}
 		if blk.Type != keyType {

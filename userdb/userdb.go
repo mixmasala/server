@@ -37,8 +37,8 @@ type UserDB interface {
 
 	// Add adds the user identified by the username and public key
 	// to the database.  Existing users will have their public keys
-	// updated.
-	Add([]byte, *ecdh.PublicKey) error
+	// updated if specified, otherwise an error will be returned.
+	Add([]byte, *ecdh.PublicKey, bool) error
 
 	// Remove removes the user identified by the username from the database.
 	Remove([]byte) error
