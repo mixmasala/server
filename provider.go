@@ -18,15 +18,18 @@ package server
 
 import (
 	"bytes"
+	"strings"
 	"sync"
 
 	"github.com/eapache/channels"
 	"github.com/katzenpost/core/constants"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/server/spool"
 	"github.com/katzenpost/server/spool/boltspool"
+	"github.com/katzenpost/server/thwack"
 	"github.com/katzenpost/server/userdb"
 	"github.com/katzenpost/server/userdb/boltuserdb"
 	"github.com/op/go-logging"
@@ -214,6 +217,60 @@ func (p *provider) onToUser(pkt *packet, recipient []byte) {
 	}
 }
 
+func (p *provider) onAddUser(c *thwack.Conn, l string) error {
+	return p.doAddUpdate(c, l, false)
+}
+
+func (p *provider) onUpdateUser(c *thwack.Conn, l string) error {
+	return p.doAddUpdate(c, l, true)
+}
+
+func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
+	sp := strings.Split(l, " ")
+	if len(sp) != 3 {
+		c.Log().Debugf("[ADD/UPDATE]_USER invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	// Deserialize the public key.
+	var pubKey ecdh.PublicKey
+	if err := pubKey.UnmarshalText([]byte(sp[2])); err != nil {
+		c.Log().Errorf("[ADD/UPDATE]_USER invalid public key: ", err)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	// Attempt to add or update the user.
+	if err := p.userDB.Add([]byte(sp[1]), &pubKey, isUpdate); err != nil {
+		c.Log().Errorf("Failed to add/update user: ", err)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+
+	return c.WriteReply(thwack.StatusOk)
+}
+
+func (p *provider) onRemoveUser(c *thwack.Conn, l string) error {
+	sp := strings.Split(l, " ")
+	if len(sp) != 2 {
+		c.Log().Debugf("REMOVE_USER invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	// Remove the user from the UserDB.
+	if err := p.userDB.Remove([]byte(sp[1])); err != nil {
+		c.Log().Errorf("Failed to remove user '%v': %v", sp[1], err)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+
+	// Remove the user's spool.
+	if err := p.spool.Remove([]byte(sp[1])); err != nil {
+		// Log an error, but don't return a failed status, because the
+		// user has been obliterated from the UserDB at this point.
+		c.Log().Errorf("Failed to remove spool '%v': %v", sp[1], err)
+	}
+
+	return c.WriteReply(thwack.StatusOk)
+}
+
 func newProvider(s *Server) (*provider, error) {
 	p := new(provider)
 	p.s = s
@@ -238,6 +295,19 @@ func newProvider(s *Server) (*provider, error) {
 		p.spool.Close()
 		p.userDB.Close()
 		return nil, err
+	}
+
+	// Wire in the managment related commands.
+	if s.cfg.Management.Enable {
+		const (
+			cmdAddUser    = "ADD_USER"
+			cmdUpdateUser = "UPDATE_USER"
+			cmdRemoveUser = "REMOVE_USER"
+		)
+
+		s.management.RegisterCommand(cmdAddUser, p.onAddUser)
+		s.management.RegisterCommand(cmdUpdateUser, p.onUpdateUser)
+		s.management.RegisterCommand(cmdRemoveUser, p.onRemoveUser)
 	}
 
 	p.Add(1)
