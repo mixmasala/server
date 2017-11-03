@@ -76,12 +76,15 @@ func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 	return isValid
 }
 
-func (d *boltUserDB) Add(u []byte, k *ecdh.PublicKey) error {
+func (d *boltUserDB) Add(u []byte, k *ecdh.PublicKey, update bool) error {
 	if len(u) == 0 || len(u) > userdb.MaxUsernameSize {
 		return fmt.Errorf("userdb: invalid username: `%v`", u)
 	}
 	if k == nil {
 		return fmt.Errorf("userdb: must provide a public key")
+	}
+	if d.Exists(u) && !update {
+		return fmt.Errorf("userdb: user already exists")
 	}
 
 	err := d.db.Update(func(tx *bolt.Tx) error {

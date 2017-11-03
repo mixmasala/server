@@ -58,8 +58,8 @@ func doTestCreate(t *testing.T) {
 	defer d.Close()
 
 	for u, k := range testUsers {
-		err = d.Add([]byte(u), k)
-		require.NoErrorf(err, "Add(%v)", u)
+		err = d.Add([]byte(u), k, false)
+		require.NoErrorf(err, "Add(%v, k, false)", u)
 	}
 
 	for u, k := range testUsers {
@@ -84,6 +84,9 @@ func doTestLoad(t *testing.T) {
 	}
 	assert.False(d.Exists([]byte("malory")), "Exists('malory')")
 	assert.False(d.IsValid([]byte("malory"), testUsers["alice"]), "IsValid('malory', k)")
+
+	err = d.Add([]byte("alice"), testUsers["alice"], false)
+	assert.Error(err, "Add('alice', k, false)")
 }
 
 func init() {
