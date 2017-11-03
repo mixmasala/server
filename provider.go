@@ -36,6 +36,7 @@ import (
 )
 
 type provider struct {
+	sync.Mutex
 	sync.WaitGroup
 
 	s      *Server
@@ -226,6 +227,9 @@ func (p *provider) onUpdateUser(c *thwack.Conn, l string) error {
 }
 
 func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
+	p.Lock()
+	defer p.Unlock()
+
 	sp := strings.Split(l, " ")
 	if len(sp) != 3 {
 		c.Log().Debugf("[ADD/UPDATE]_USER invalid syntax: '%v'", l)
@@ -249,6 +253,9 @@ func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
 }
 
 func (p *provider) onRemoveUser(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
 	sp := strings.Split(l, " ")
 	if len(sp) != 2 {
 		c.Log().Debugf("REMOVE_USER invalid syntax: '%v'", l)
