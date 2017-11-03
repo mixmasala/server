@@ -114,9 +114,9 @@ func (s *Server) initLogging() error {
 	// the server logger.
 	//
 	// TODO: Maybe use a custom backend to support rotating the log file.
-	var b logging.Backend
-	b = logging.NewLogBackend(f, "", 0)
-	s.logBackend = b.(logging.LeveledBackend)
+	b := logging.NewLogBackend(f, "", 0)
+	bl := logging.AddModuleLevel(b)
+	s.logBackend = bl
 	s.logBackend.SetLevel(logLevelFromString(s.cfg.Logging.Level), "")
 	s.log = s.newLogger("server")
 
