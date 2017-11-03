@@ -589,14 +589,13 @@ func (p *pki) isValidForwardDest(id *[constants.NodeIDLength]byte) bool {
 	return doc.outgoing[*id] != nil
 }
 
-func newPKI(s *Server) *pki {
+func newPKI(s *Server, impl cpki.Client) *pki {
 	p := new(pki)
 	p.s = s
+	p.impl = impl
 	p.log = s.newLogger("pki")
 	p.docs = make(map[uint64]*pkiCacheEntry)
 	p.haltCh = make(chan interface{})
-
-	// XXX/pki: Initialize the concrete implementation.
 
 	// Note: This does not start the worker immediately since the worker can
 	// make calls into the connector and crypto workers (on PKI updates),

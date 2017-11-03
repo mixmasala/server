@@ -29,6 +29,7 @@ import (
 	"github.com/eapache/channels"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
+	cpki "github.com/katzenpost/core/pki"
 	"github.com/katzenpost/server/config"
 	"github.com/katzenpost/server/thwack"
 	"github.com/op/go-logging"
@@ -221,7 +222,7 @@ func (s *Server) halt() {
 
 // New returns a new Server instance parameterized with the specified
 // configuration.
-func New(cfg *config.Config) (*Server, error) {
+func New(cfg *config.Config, pkiimpl cpki.Client) (*Server, error) {
 	s := new(Server)
 	s.cfg = cfg
 
@@ -293,7 +294,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize the PKI interface.
-	s.pki = newPKI(s)
+	s.pki = newPKI(s, pkiimpl)
 
 	// Initialize the provider backend.
 	if s.cfg.Server.IsProvider {
