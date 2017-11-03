@@ -40,6 +40,7 @@ const (
 	defaultReauthInterval   = 30 * 1000 // 30 sec.
 	defaultUserDB           = "users.db"
 	defaultSpoolDB          = "spool.db"
+	defaultManagementSocket = "management_sock"
 )
 
 var defaultLogging = Logging{
@@ -216,6 +217,33 @@ func (pCfg *Provider) validate() error {
 	if !filepath.IsAbs(pCfg.UserDB) {
 		return fmt.Errorf("config: Provider: UserDB '%v' is not an absolute path", pCfg.UserDB)
 	}
+	if !filepath.IsAbs(pCfg.SpoolDB) {
+		return fmt.Errorf("config: Provider: SpoolDB '%v' is not an absolute path", pCfg.SpoolDB)
+	}
+	return nil
+}
+
+type Management struct {
+	// Enable enables the management interface.
+	Enable bool
+
+	// Path specifies a path to the management interface socket.
+	Path string
+}
+
+func (mCfg *Management) applyDefaults(sCfg *Server) {
+	if mCfg.Path == "" {
+		mCfg.Path = filepath.Join(sCfg.DataDir, defaultManagementSocket)
+	}
+}
+
+func (mCfg *Management) validate() error {
+	if !mCfg.Enable {
+		return nil
+	}
+	if !filepath.IsAbs(mCfg.Path) {
+		return fmt.Errorf("config: Management: Path '%v' is not an absolute path", mCfg.Path)
+	}
 	return nil
 }
 
@@ -225,6 +253,7 @@ type Config struct {
 	Logging  *Logging
 	Provider *Provider
 	// XXX: PKI.
+	Management *Management
 
 	Debug *Debug
 }
@@ -247,6 +276,9 @@ func Load(b []byte) (*Config, error) {
 	if cfg.Logging == nil {
 		cfg.Logging = &defaultLogging
 	}
+	if cfg.Management == nil {
+		cfg.Management = &Management{}
+	}
 
 	// Perform basic validation.
 	if err := cfg.Server.validate(); err != nil {
@@ -268,6 +300,10 @@ func Load(b []byte) (*Config, error) {
 		return nil, errors.New("config: Provider block set when not a Provider")
 	}
 	if err := cfg.Logging.validate(); err != nil {
+		return nil, err
+	}
+	cfg.Management.applyDefaults(cfg.Server)
+	if err := cfg.Management.validate(); err != nil {
 		return nil, err
 	}
 	cfg.Debug.applyDefaults()

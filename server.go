@@ -30,6 +30,7 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/server/config"
+	"github.com/katzenpost/server/thwack"
 	"github.com/op/go-logging"
 )
 
@@ -59,6 +60,7 @@ type Server struct {
 	listeners     []*listener
 	connector     *connector
 	provider      *provider
+	management    *thwack.Server
 
 	haltOnce sync.Once
 }
@@ -152,6 +154,12 @@ func (s *Server) halt() {
 	if s.periodic != nil {
 		s.periodic.halt()
 		s.periodic = nil
+	}
+
+	// Stop the management interface.
+	if s.management != nil {
+		s.management.Halt()
+		s.management = nil
 	}
 
 	// Stop the listener(s), close all incoming connections.
@@ -265,6 +273,23 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, ErrGenerateOnly
 	}
 
+	// Initialize the management interface if enabled.
+	//
+	// Note: This is done first so that other subsystems may register commands.
+	if s.cfg.Management.Enable {
+		mgmtCfg := &thwack.Config{
+			Net:         "unix",
+			Addr:        s.cfg.Management.Path,
+			ServiceName: s.cfg.Server.Identifier + " Katzenpost Server",
+			LogModule:   "mgmt",
+			NewLoggerFn: s.newLogger,
+		}
+		if s.management, err = thwack.New(mgmtCfg); err != nil {
+			s.log.Errorf("Failed to initialize management interface: %v", err)
+			return nil, err
+		}
+	}
+
 	// Initialize the PKI interface.
 	s.pki = newPKI(s)
 
@@ -305,6 +330,13 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Start the periodic 1 Hz utility timer.
 	s.periodic = newPeriodicTimer(s)
+
+	// Start listening on the management interface if enabled, now that every
+	// subsystem that wants to register commands has had the opportunity to do
+	// so.
+	if s.management != nil {
+		s.management.Start()
+	}
 
 	isOk = true
 	return s, nil
