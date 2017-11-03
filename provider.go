@@ -87,6 +87,7 @@ func (p *provider) worker() {
 		select {
 		case <-p.haltCh:
 			p.log.Debugf("Terminating gracefully.")
+			return
 		case e := <-ch:
 			pkt = e.(*packet)
 		}
