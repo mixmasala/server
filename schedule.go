@@ -58,6 +58,7 @@ func (sch *scheduler) worker() {
 		sch.Done()
 	}()
 	for {
+		timerFired := false
 		// The vast majority of the time the scheduler will be idle waiting on
 		// new packets or for a packet in the priority queue to be eligible
 		// for dispatch.  This is where the actual "mix" part of the mix
@@ -93,10 +94,11 @@ func (sch *scheduler) worker() {
 		case <-timer.C:
 			// Packet delay probably passed, packet dispatch handled as
 			// part of rescheduling the timer.
+			timerFired = true
 		}
 
 		// Dispatch packets if possible and reschedule the next wakeup.
-		if !timer.Stop() {
+		if !timerFired && !timer.Stop() {
 			<-timer.C
 		}
 		for {

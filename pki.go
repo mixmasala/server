@@ -188,6 +188,7 @@ func (p *pki) worker() {
 	for {
 		const recheckInterval = 1 * time.Minute
 
+		timerFired := false
 		select {
 		case <-p.haltCh:
 			p.log.Debugf("Terminating gracefully.")
@@ -195,8 +196,9 @@ func (p *pki) worker() {
 		case <-pkiCtx.Done():
 			return
 		case <-timer.C:
+			timerFired = true
 		}
-		if !timer.Stop() {
+		if !timerFired && !timer.Stop() {
 			<-timer.C
 		}
 

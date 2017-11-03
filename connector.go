@@ -86,6 +86,7 @@ func (co *connector) worker() {
 		co.Done()
 	}()
 	for {
+		timerFired := false
 		select {
 		case <-co.haltCh:
 			co.log.Debugf("Terminating gracefully.")
@@ -94,8 +95,9 @@ func (co *connector) worker() {
 			co.log.Debugf("Starting forced sweep.")
 		case <-timer.C:
 			co.log.Debugf("Starting periodic sweep.")
+			timerFired = true
 		}
-		if !timer.Stop() {
+		if !timerFired && !timer.Stop() {
 			<-timer.C
 		}
 
