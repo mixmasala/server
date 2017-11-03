@@ -211,11 +211,10 @@ Level = "DEBUG"
 	cfg, err := config.Load([]byte(fmt.Sprintf(basicConfig, datadir)))
 	require.NoError(err, "Load() with basic config")
 
-	server, err := New(cfg)
-	require.NoError(err, "error")
-
 	mockPKI, _ := newMixPKI(require)
-	server.pki.impl = mockPKI // XXX nope
+
+	server, err := New(cfg, mockPKI)
+	require.NoError(err, "error")
 
 	provider, err := newProvider(server)
 	require.NoError(err, "error")
