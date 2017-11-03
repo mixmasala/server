@@ -223,11 +223,13 @@ func (pCfg *Provider) validate() error {
 	return nil
 }
 
+// Management is the Katzenpost management interface configuration.
 type Management struct {
 	// Enable enables the management interface.
 	Enable bool
 
-	// Path specifies a path to the management interface socket.
+	// Path specifies the path to the manaagment interface socket.  If left
+	// empty it will use `management_sock` under the DataDir.
 	Path string
 }
 
