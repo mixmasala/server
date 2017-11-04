@@ -23,6 +23,7 @@ import (
 
 	"github.com/katzenpost/client/mix_pki"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
 	corepki "github.com/katzenpost/core/pki"
@@ -31,11 +32,18 @@ import (
 )
 
 type MixDescriptorSecrets struct {
-	linkPrivKey  *ecdh.PrivateKey
-	epochSecrets map[ecdh.PublicKey]*ecdh.PrivateKey
+	identityPrivKey *eddsa.PrivateKey
+	linkPrivKey     *ecdh.PrivateKey
+	epochSecrets    map[ecdh.PublicKey]*ecdh.PrivateKey
 }
 
 func createMixDescriptor(name string, layer uint8, addresses []string, startEpoch, endEpoch uint64) (*corepki.MixDescriptor, *MixDescriptorSecrets, error) {
+
+	identityKey, err := eddsa.NewKeypair(rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	linkPrivKey, err := ecdh.NewKeypair(rand.Reader)
 	if err != nil {
 		return nil, nil, err
@@ -52,16 +60,18 @@ func createMixDescriptor(name string, layer uint8, addresses []string, startEpoc
 		epochSecrets[*pubKey] = mixPrivKey
 	}
 	secrets := MixDescriptorSecrets{
-		linkPrivKey:  linkPrivKey,
-		epochSecrets: epochSecrets,
+		identityPrivKey: identityKey,
+		linkPrivKey:     linkPrivKey,
+		epochSecrets:    epochSecrets,
 	}
 	descriptor := corepki.MixDescriptor{
-		Name:       name,
-		LinkKey:    linkPrivKey.PublicKey(),
-		MixKeys:    mixKeys,
-		Addresses:  addresses,
-		Layer:      layer,
-		LoadWeight: 0,
+		Name:        name,
+		LinkKey:     linkPrivKey.PublicKey(),
+		IdentityKey: identityKey.PublicKey(),
+		MixKeys:     mixKeys,
+		Addresses:   addresses,
+		Layer:       layer,
+		LoadWeight:  0,
 	}
 	return &descriptor, &secrets, nil
 }
