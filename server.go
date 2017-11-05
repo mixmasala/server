@@ -27,9 +27,9 @@ import (
 	"github.com/eapache/channels"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/core/thwack"
 	"github.com/katzenpost/server/config"
 	"github.com/katzenpost/server/internal/log"
-	"github.com/katzenpost/server/thwack"
 	"github.com/op/go-logging"
 )
 
