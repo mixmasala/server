@@ -302,7 +302,7 @@ func newOutgoingConn(co *connector, dst *cpki.MixDescriptor) *outgoingConn {
 	c.dst = dst
 	c.ch = make(chan *packet, maxQueueSize)
 	c.id = atomic.AddUint64(&outgoingConnID, 1) // Diagnostic only, wrapping is fine.
-	c.log = co.s.newLogger(fmt.Sprintf("outgoing:%d", c.id))
+	c.log = co.s.logBackend.GetLogger(fmt.Sprintf("outgoing:%d", c.id))
 
 	// Note: Unlike most other things, this does not spawn the worker here,
 	// because the worker needs to be spawned after the struct is added to

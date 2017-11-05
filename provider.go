@@ -240,13 +240,13 @@ func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
 	// Deserialize the public key.
 	var pubKey ecdh.PublicKey
 	if err := pubKey.UnmarshalText([]byte(sp[2])); err != nil {
-		c.Log().Errorf("[ADD/UPDATE]_USER invalid public key: ", err)
+		c.Log().Errorf("[ADD/UPDATE]_USER invalid public key: %v", err)
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
 	// Attempt to add or update the user.
 	if err := p.userDB.Add([]byte(sp[1]), &pubKey, isUpdate); err != nil {
-		c.Log().Errorf("Failed to add/update user: ", err)
+		c.Log().Errorf("Failed to add/update user: %v", err)
 		return c.WriteReply(thwack.StatusTransactionFailed)
 	}
 
@@ -283,7 +283,7 @@ func newProvider(s *Server) (*provider, error) {
 	p := new(provider)
 	p.s = s
 	p.ch = channels.NewInfiniteChannel()
-	p.log = s.newLogger("provider")
+	p.log = s.logBackend.GetLogger("provider")
 	p.haltCh = make(chan interface{})
 
 	var err error

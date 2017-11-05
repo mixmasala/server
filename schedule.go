@@ -152,7 +152,7 @@ func (sch *scheduler) worker() {
 func newScheduler(s *Server) *scheduler {
 	sch := new(scheduler)
 	sch.s = s
-	sch.log = s.newLogger("scheduler")
+	sch.log = s.logBackend.GetLogger("scheduler")
 	sch.ch = channels.NewInfiniteChannel()
 	sch.haltCh = make(chan interface{})
 	sch.Add(1)

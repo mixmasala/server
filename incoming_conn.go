@@ -321,7 +321,7 @@ func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
 	c.l = l
 	c.c = conn
 	c.id = atomic.AddUint64(&incomingConnID, 1) // Diagnostic only, wrapping is fine.
-	c.log = l.s.newLogger(fmt.Sprintf("incoming:%d", c.id))
+	c.log = l.s.logBackend.GetLogger(fmt.Sprintf("incoming:%d", c.id))
 
 	// Note: Unlike most other things, this does not spawn the worker here,
 	// because the worker needs to be spawned after the struct is added to

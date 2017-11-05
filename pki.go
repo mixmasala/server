@@ -592,7 +592,7 @@ func (p *pki) isValidForwardDest(id *[constants.NodeIDLength]byte) bool {
 func newPKI(s *Server) *pki {
 	p := new(pki)
 	p.s = s
-	p.log = s.newLogger("pki")
+	p.log = s.logBackend.GetLogger("pki")
 	p.docs = make(map[uint64]*pkiCacheEntry)
 	p.haltCh = make(chan interface{})
 

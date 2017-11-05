@@ -20,8 +20,6 @@ package server
 import (
 	"errors"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -30,6 +28,7 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/server/config"
+	"github.com/katzenpost/server/internal/log"
 	"github.com/katzenpost/server/thwack"
 	"github.com/op/go-logging"
 )
@@ -47,7 +46,7 @@ type Server struct {
 	identityKey *eddsa.PrivateKey
 	linkKey     *ecdh.PrivateKey
 
-	logBackend logging.LeveledBackend
+	logBackend *log.Backend
 	log        *logging.Logger
 
 	inboundPackets *channels.InfiniteChannel
@@ -92,45 +91,17 @@ func (s *Server) initDataDir() error {
 }
 
 func (s *Server) initLogging() error {
-	// Figure out where the log should go to, creating a log file as needed.
-	var f io.Writer
-	if s.cfg.Logging.Disable {
-		f = ioutil.Discard
-	} else if s.cfg.Logging.File == "" {
-		f = os.Stdout
-	} else {
-		p := s.cfg.Logging.File
-		if !filepath.IsAbs(p) {
-			p = filepath.Join(s.cfg.Server.DataDir, p)
-		}
-
-		var err error
-		flags := os.O_CREATE | os.O_APPEND | os.O_WRONLY
-		f, err = os.OpenFile(p, flags, fileMode)
-		if err != nil {
-			return fmt.Errorf("server: failed to create log file: %v", err)
-		}
+	p := s.cfg.Logging.File
+	if !s.cfg.Logging.Disable && s.cfg.Logging.File != "" {
+		p = filepath.Join(s.cfg.Server.DataDir, p)
 	}
 
-	// Create a new log backend, using the configured output, and initialize
-	// the server logger.
-	//
-	// TODO: Maybe use a custom backend to support rotating the log file.
-	logFmt := logging.MustStringFormatter("%{time:15:04:05.000} %{level:.4s} %{module}: %{message}")
-	b := logging.NewLogBackend(f, "", 0)
-	bFmt := logging.NewBackendFormatter(b, logFmt)
-	bl := logging.AddModuleLevel(bFmt)
-	s.logBackend = bl
-	s.logBackend.SetLevel(logLevelFromString(s.cfg.Logging.Level), "")
-	s.log = s.newLogger("server")
-
-	return nil
-}
-
-func (s *Server) newLogger(module string) *logging.Logger {
-	l := logging.MustGetLogger(module)
-	l.SetBackend(s.logBackend)
-	return l
+	var err error
+	s.logBackend, err = log.New(p, s.cfg.Logging.Level, s.cfg.Logging.Disable)
+	if err == nil {
+		s.log = s.logBackend.GetLogger("server")
+	}
+	return err
 }
 
 func (s *Server) reshadowCryptoWorkers() {
@@ -284,7 +255,7 @@ func New(cfg *config.Config) (*Server, error) {
 			Addr:        s.cfg.Management.Path,
 			ServiceName: s.cfg.Server.Identifier + " Katzenpost Server",
 			LogModule:   "mgmt",
-			NewLoggerFn: s.newLogger,
+			NewLoggerFn: s.logBackend.GetLogger,
 		}
 		if s.management, err = thwack.New(mgmtCfg); err != nil {
 			s.log.Errorf("Failed to initialize management interface: %v", err)
@@ -342,21 +313,4 @@ func New(cfg *config.Config) (*Server, error) {
 
 	isOk = true
 	return s, nil
-}
-
-func logLevelFromString(l string) logging.Level {
-	switch l {
-	case "ERROR":
-		return logging.ERROR
-	case "WARNING":
-		return logging.WARNING
-	case "NOTICE":
-		return logging.NOTICE
-	case "INFO":
-		return logging.INFO
-	case "DEBUG":
-		return logging.DEBUG
-	default:
-		panic("BUG: invalid log level (post-validation)")
-	}
 }

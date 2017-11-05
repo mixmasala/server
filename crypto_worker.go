@@ -261,7 +261,7 @@ func (w *cryptoWorker) derefKeys() {
 func newCryptoWorker(s *Server, id int) *cryptoWorker {
 	w := new(cryptoWorker)
 	w.s = s
-	w.log = s.newLogger(fmt.Sprintf("crypto:%d", id))
+	w.log = s.logBackend.GetLogger(fmt.Sprintf("crypto:%d", id))
 	w.mixKeys = make(map[uint64]*mixkey.MixKey)
 	w.updateCh = make(chan bool)
 	w.haltCh = make(chan interface{})

@@ -152,7 +152,7 @@ func (m *mixKeys) halt() {
 func newMixKeys(s *Server) (*mixKeys, error) {
 	m := new(mixKeys)
 	m.s = s
-	m.log = s.newLogger("mixkeys")
+	m.log = s.logBackend.GetLogger("mixkeys")
 	m.keys = make(map[uint64]*mixkey.MixKey)
 	if err := m.init(); err != nil {
 		return nil, err

@@ -132,7 +132,7 @@ func newListener(s *Server, id int, addr string) (*listener, error) {
 
 	l := new(listener)
 	l.s = s
-	l.log = s.newLogger(fmt.Sprintf("listener:%d", id))
+	l.log = s.logBackend.GetLogger(fmt.Sprintf("listener:%d", id))
 	l.conns = list.New()
 	l.closeAllCh = make(chan interface{})
 	l.Add(1)
