@@ -253,7 +253,7 @@ func New(cfg *config.Config) (*Server, error) {
 		mgmtCfg := &thwack.Config{
 			Net:         "unix",
 			Addr:        s.cfg.Management.Path,
-			ServiceName: s.cfg.Server.Identifier + " Katzenpost Server",
+			ServiceName: s.cfg.Server.Identifier + " Katzenpost Management Interface",
 			LogModule:   "mgmt",
 			NewLoggerFn: s.logBackend.GetLogger,
 		}
