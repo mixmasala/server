@@ -218,12 +218,12 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Errorf("Failed to initialize identity: %v", err)
 		return nil, err
 	}
-	s.log.Noticef("Server identity public key is: %s", eddsaToPrintString(s.identityKey.PublicKey()))
+	s.log.Noticef("Server identity public key is: %s", s.identityKey.PublicKey())
 	if err := s.initLink(); err != nil {
 		s.log.Errorf("Failed to initialize link key: %v", err)
 		return nil, err
 	}
-	s.log.Noticef("Server link public key is: %s", ecdhToPrintString(s.linkKey.PublicKey()))
+	s.log.Noticef("Server link public key is: %s", s.linkKey.PublicKey())
 
 	// Load and or generate mix keys.
 	var err error

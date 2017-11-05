@@ -436,7 +436,7 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 	// If mix authentication is disabled, then we just allow everyone to
 	// connect as a mix.
 	if p.s.cfg.Debug.DisableMixAuthentication {
-		p.log.Debugf("Incoming: Blindly authenticating peer: '%v'(%v).", bytesToPrintString(c.AdditionalData), ecdhToPrintString(c.PublicKey))
+		p.log.Debugf("Incoming: Blindly authenticating peer: '%v'(%v).", bytesToPrintString(c.AdditionalData), c.PublicKey)
 		return true, true
 	}
 
@@ -470,7 +470,7 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 		if !bytes.Equal(m.LinkKey.Bytes(), c.PublicKey.Bytes()) {
 			// The LinkKey that is being used for authentication should
 			// match what is listed in the descriptor.
-			p.log.Warningf("Incoming: '%v' Public Key mismatch: '%v'", bytesToPrintString(c.AdditionalData), ecdhToPrintString(c.PublicKey))
+			p.log.Warningf("Incoming: '%v' Public Key mismatch: '%v'", bytesToPrintString(c.AdditionalData), c.PublicKey)
 			continue
 		}
 
@@ -508,7 +508,7 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescriptor, canSend, isValid bool) {
 	// If mix authentication is disabled, then we just blindly blast away.
 	if p.s.cfg.Debug.DisableMixAuthentication {
-		p.log.Debugf("Outgoing: Blindly authenticating peer: '%v'(%v).", bytesToPrintString(c.AdditionalData), ecdhToPrintString(c.PublicKey))
+		p.log.Debugf("Outgoing: Blindly authenticating peer: '%v'(%v).", bytesToPrintString(c.AdditionalData), c.PublicKey)
 		return nil, true, true
 	}
 
@@ -526,7 +526,7 @@ func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescr
 		if !bytes.Equal(m.LinkKey.Bytes(), c.PublicKey.Bytes()) {
 			// The LinkKey that is being used for authentication should
 			// match what is listed in the descriptor.
-			p.log.Warningf("Outgoing: '%v' Public Key mismatch: '%v'", bytesToPrintString(c.AdditionalData), ecdhToPrintString(c.PublicKey))
+			p.log.Warningf("Outgoing: '%v' Public Key mismatch: '%v'", bytesToPrintString(c.AdditionalData), c.PublicKey)
 			continue
 		}
 

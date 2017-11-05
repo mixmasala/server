@@ -65,7 +65,7 @@ func (p *provider) halt() {
 
 func (p *provider) authenticateClient(c *wire.PeerCredentials) bool {
 	isValid := p.userDB.IsValid(c.AdditionalData, c.PublicKey)
-	p.log.Debugf("Auth: User: '%v', Key: '%v': %v", asciiBytesToPrintString(c.AdditionalData), ecdhToPrintString(c.PublicKey), isValid)
+	p.log.Debugf("Auth: User: '%v', Key: '%v': %v", asciiBytesToPrintString(c.AdditionalData), c.PublicKey, isValid)
 	return isValid
 }
 

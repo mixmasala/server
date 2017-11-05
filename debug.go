@@ -21,21 +21,11 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/sphinx/constants"
 )
 
 func nodeIDToPrintString(id *[constants.NodeIDLength]byte) string {
 	return strings.ToUpper(hex.EncodeToString(id[:]))
-}
-
-func ecdhToPrintString(pk *ecdh.PublicKey) string {
-	return strings.ToUpper(hex.EncodeToString(pk.Bytes()))
-}
-
-func eddsaToPrintString(pk *eddsa.PublicKey) string {
-	return strings.ToUpper(hex.EncodeToString(pk.Bytes()))
 }
 
 func bytesToPrintString(b []byte) string {
