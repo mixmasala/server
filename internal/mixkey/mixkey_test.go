@@ -17,6 +17,7 @@
 package mixkey
 
 import (
+	"crypto/rand"
 	"encoding/hex"
 	"io/ioutil"
 	"os"
@@ -124,6 +125,65 @@ func doTestUnlink(t *testing.T) {
 	// doTestLoad() should have removed the database, unless it failed to load.
 	_, err := os.Lstat(testKeyPath)
 	require.True(os.IsNotExist(err), "Database should not exist")
+}
+
+func BenchmarkMixKey(b *testing.B) {
+	var err error
+	tmpDir, err = ioutil.TempDir("", "mixkey_benchmarks")
+	if err != nil {
+		b.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	b.Run("IsReplay (miss)", doBenchIsReplayMiss)
+	b.Run("IsReplay (hit)", doBenchIsReplayHit)
+}
+
+func doBenchIsReplayMiss(b *testing.B) {
+	k, err := New(tmpDir, testEpoch)
+	if err != nil {
+		b.Fatalf("Failed to open key: %v", err)
+	}
+	k.SetUnlinkIfExpired(true)
+	defer k.Deref()
+
+	count := 0
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		var tag [32]byte
+		rand.Read(tag[:])
+		b.StartTimer()
+
+		if k.IsReplay(tag[:]) {
+			count++
+		}
+	}
+	b.StopTimer()
+	b.Logf("Checks: %v Hits: %v Misses: %v", b.N, count, b.N-count)
+}
+
+func doBenchIsReplayHit(b *testing.B) {
+	k, err := New(tmpDir, testEpoch)
+	if err != nil {
+		b.Fatalf("Failed to open key: %v", err)
+	}
+	k.SetUnlinkIfExpired(true)
+	defer k.Deref()
+
+	var tag [32]byte
+	rand.Read(tag[:])
+	k.IsReplay(tag[:]) // Add as a replay.
+
+	count := 0
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if k.IsReplay(tag[:]) {
+			count++
+		}
+	}
+	b.StopTimer()
+	b.Logf("Checks: %v Hits: %v Misses: %v", b.N, count, b.N-count)
 }
 
 func init() {
