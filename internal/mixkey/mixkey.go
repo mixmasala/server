@@ -164,9 +164,12 @@ func (k *MixKey) testAndSetTagMemory(tag *[TagLength]byte) (bool, bool) {
 	k.Lock()
 	defer k.Unlock()
 
+	// TODO/perf: Perhaps the lock should only cover the bloom filter,
+	// and a sync.Map used for the pending write-back entries.
+
 	// If the filter is saturated then force a database lookup.
 	if k.f.Entries() >= k.f.MaxEntries() {
-		return true, true
+		return true, k.writeBack[*tag]
 	}
 	if !k.f.TestAndSet(tag[:]) {
 		// The tag is not in the bloom filter, so by definition it is not a replay.
