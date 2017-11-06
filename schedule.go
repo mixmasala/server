@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/eapache/channels"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/queue"
 	"github.com/op/go-logging"
@@ -49,6 +50,7 @@ func (sch *scheduler) onPacket(pkt *packet) {
 }
 
 func (sch *scheduler) worker() {
+	mRand := rand.NewMath()
 	q := queue.New()
 	ch := sch.ch.Out()
 	timerSlack := time.Duration(sch.s.cfg.Debug.SchedulerSlack) * time.Millisecond
@@ -84,6 +86,15 @@ func (sch *scheduler) worker() {
 			// Ensure the peer is valid, by querying the PKI, and NOT the
 			// outgoing connection table.
 			if sch.s.pki.isValidForwardDest(&pkt.nextNodeHop.ID) {
+				// If queue limitations are enabled, check to see if there
+				// is a slot for this packet.
+				if max := sch.s.cfg.Debug.SchedulerQueueSize; max > 0 {
+					if q.Len()+1 > max {
+						drop := q.DequeueRandom(mRand).Value.(*packet)
+						sch.log.Debugf("Queue size limit reached, discarding: %v", drop.id)
+						drop.dispose()
+					}
+				}
 				sch.log.Debugf("Enqueueing packet: %v delta-t: %v", pkt.id, pkt.delay)
 				q.Enqueue(uint64(monotime.Now()+pkt.delay), pkt)
 			} else {

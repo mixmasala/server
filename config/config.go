@@ -111,6 +111,11 @@ type Debug struct {
 	// inbound Sphinx packet processing.
 	NumSphinxWorkers int
 
+	// SchedulerQueueSize is the maximum allowed scheduler queue size before
+	// random entries will start getting dropped.  A value <= 0 is treated
+	// as unlimited.
+	SchedulerQueueSize int
+
 	// SchedulerSlack is the maximum allowed scheduler slack due to queueing
 	// and or processing in milliseconds.
 	SchedulerSlack int
