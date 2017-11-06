@@ -148,6 +148,7 @@ func (s *boltSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining i
 
 		if next == nil {
 			// Deleting the message drained the queue.
+			sBkt.SetSequence(0) // Don't keep a lifetime message count.
 			remaining = 0
 			err = tx.Commit()
 			return
