@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"git.schwanenlied.me/yawning/aez.git"
 	"github.com/eapache/channels"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
@@ -210,6 +211,11 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")
+	}
+	if aez.IsHardwareAccelerated() {
+		s.log.Noticef("AEZv5 implementation is hardware accelerated.")
+	} else {
+		s.log.Warningf("AEZv5 implementation IS NOT hardware accelerated.")
 	}
 	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
 
