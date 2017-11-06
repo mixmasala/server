@@ -36,19 +36,7 @@ var (
 	testKeyPath string
 	testKey     ecdh.PrivateKey
 
-	testPositiveTags = [][]byte{
-		[]byte("Only where we ourselves are responsible for our own interests"),
-		[]byte("and are free to sacrifice them has our decision moral value."),
-		[]byte("We are neither entitled to be unselfish at someone else's expense"),
-		[]byte("nor is there any merit in being unselfish if we have no choice."),
-		[]byte("The members of a society who in all respects are made to do the good thing"),
-		[]byte("have no title to praise."),
-	}
-	testNegativeTags = [][]byte{
-		[]byte("Once men turned their thinking over to machines in the hope"),
-		[]byte("that this would set them free. But that only permitted other"),
-		[]byte("men with machines to enslave them."),
-	}
+	testPositiveTags, testNegativeTags map[[TagLength]byte]bool
 )
 
 func TestMixKey(t *testing.T) {
@@ -88,9 +76,9 @@ func doTestCreate(t *testing.T) {
 	assert.True(k.IsReplay([]byte{}), "IsReplay([]byte{})")
 
 	// Populate the replay filter.
-	for _, v := range testPositiveTags {
-		isReplay := k.IsReplay(v)
-		assert.False(isReplay, "IsReplay() new: %v", string(v))
+	for tag := range testPositiveTags {
+		isReplay := k.IsReplay(tag[:])
+		assert.False(isReplay, "IsReplay() new: %v", hex.EncodeToString(tag[:]))
 	}
 }
 
@@ -109,13 +97,13 @@ func doTestLoad(t *testing.T) {
 
 	// Ensure that the loaded replay filter is consistent.
 	assert.True(k.IsReplay([]byte{}), "IsReplay([]byte{})")
-	for _, v := range testPositiveTags {
-		isReplay := k.IsReplay(v)
-		assert.True(isReplay, "IsReplay() load, positive: %v", string(v))
+	for tag := range testPositiveTags {
+		isReplay := k.IsReplay(tag[:])
+		assert.True(isReplay, "IsReplay() load, positive: %v", hex.EncodeToString(tag[:]))
 	}
-	for _, v := range testNegativeTags {
-		isReplay := k.IsReplay(v)
-		assert.False(isReplay, "IsReplay() load, negative: %v", string(v))
+	for tag := range testNegativeTags {
+		isReplay := k.IsReplay(tag[:])
+		assert.False(isReplay, "IsReplay() load, negative: %v", hex.EncodeToString(tag[:]))
 	}
 }
 
@@ -151,7 +139,7 @@ func doBenchIsReplayMiss(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
-		var tag [32]byte
+		var tag [TagLength]byte
 		rand.Read(tag[:])
 		b.StartTimer()
 
@@ -160,7 +148,10 @@ func doBenchIsReplayMiss(b *testing.B) {
 		}
 	}
 	b.StopTimer()
-	b.Logf("Checks: %v Hits: %v Misses: %v", b.N, count, b.N-count)
+	if count != 0 {
+		// Not a problem, just means we happened to generate colliding tags.
+		b.Logf("replays (%v) != 0", count)
+	}
 }
 
 func doBenchIsReplayHit(b *testing.B) {
@@ -171,7 +162,7 @@ func doBenchIsReplayHit(b *testing.B) {
 	k.SetUnlinkIfExpired(true)
 	defer k.Deref()
 
-	var tag [32]byte
+	var tag [TagLength]byte
 	rand.Read(tag[:])
 	k.IsReplay(tag[:]) // Add as a replay.
 
@@ -183,7 +174,9 @@ func doBenchIsReplayHit(b *testing.B) {
 		}
 	}
 	b.StopTimer()
-	b.Logf("Checks: %v Hits: %v Misses: %v", b.N, count, b.N-count)
+	if count != b.N {
+		b.Fatalf("replays (%v) != iterations (%v)", count, b.N)
+	}
 }
 
 func init() {
@@ -191,5 +184,25 @@ func init() {
 	tmpDir, err = ioutil.TempDir("", "mixkey_tests")
 	if err != nil {
 		panic(err)
+	}
+
+	testPositiveTags = make(map[[TagLength]byte]bool)
+	for i := 0; i < 10; {
+		var tag [TagLength]byte
+		rand.Read(tag[:])
+		if !testPositiveTags[tag] {
+			testPositiveTags[tag] = true
+			i++
+		}
+	}
+
+	testNegativeTags = make(map[[TagLength]byte]bool)
+	for i := 0; i < 10; {
+		var tag [TagLength]byte
+		rand.Read(tag[:])
+		if !testPositiveTags[tag] && !testNegativeTags[tag] {
+			testNegativeTags[tag] = true
+			i++
+		}
 	}
 }

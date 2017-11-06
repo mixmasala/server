@@ -18,13 +18,17 @@
 package mixkey
 
 import (
+	"crypto/sha512"
 	"encoding/binary"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
+	"time"
 
+	"git.schwanenlied.me/yawning/bloom.git"
 	bolt "github.com/coreos/bbolt"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
@@ -34,13 +38,27 @@ import (
 const (
 	replayBucket   = "replay"
 	metadataBucket = "metadata"
+
+	writeBackInterval = 10 * time.Second
+	writeBackSize     = 4096 // TODO/perf: Tune this.
+
+	// TagLength is the replay tag length in bytes.
+	TagLength = sha512.Size256
 )
 
 // MixKey is a Katzenpost server mix key.
 type MixKey struct {
+	sync.Mutex
+	sync.WaitGroup
+
 	db      *bolt.DB
 	keypair *ecdh.PrivateKey
 	epoch   uint64
+
+	f         *bloom.Filter
+	writeBack map[[TagLength]byte]bool
+	flushCh   chan interface{}
+	haltCh    chan interface{}
 
 	refCount        int32
 	unlinkIfExpired bool
@@ -69,45 +87,140 @@ func (k *MixKey) Epoch() uint64 {
 
 // IsReplay marks a given replay tag as seen, and returns true iff the tag has
 // been seen previously (Test and Set).
-func (k *MixKey) IsReplay(tag []byte) bool {
+func (k *MixKey) IsReplay(rawTag []byte) bool {
 	// Treat all pathologically malformed tags as replays.
-	if len(tag) == 0 {
+	if len(rawTag) != TagLength {
 		return true
 	}
+	var tag [TagLength]byte
+	copy(tag[:], rawTag)
 
-	// TODO/perf: This probably should do something clever like a bloom filter
-	// combined with a write-back cache.
-
-	var seenCount uint64
-	if err := k.db.Update(func(tx *bolt.Tx) error {
-		bkt := tx.Bucket([]byte(replayBucket))
-		if bkt == nil {
-			panic("BUG: mixkey: `replay` bucket is missing")
+	// Check the bloom filter for the tag, to see if it might be a replay.
+	isReplay := false
+	notReplay := !k.testAndSetTagMemory(&tag)
+	if notReplay {
+		// k.isNotReplay() will add the tag to the write-back cache, so
+		// just poke the flush routine and return.
+		select {
+		case k.flushCh <- true:
+		default:
+			// Non-blocking channel write, because the channel is buffered
+			// and has a timer fallback.
 		}
-
-		// Retreive the counter from the database for the tag if it exists.
-		//
-		// XXX: The counter isn't actually used for anything since it isn't
-		// returned.  Not sure if it makes sense to keep it, but I don't think
-		// it costs us anything substantial to do so.
-		if b := bkt.Get(tag); len(b) == 8 {
-			seenCount = binary.LittleEndian.Uint64(b)
-		}
-		seenCount++         // Increment the counter by 1.
-		if seenCount == 0 { // Should never happen ever, but handle correctly.
-			seenCount = math.MaxUint64
-		}
-
-		// Write the (potentially incremented) counter.
-		var seenBytes [8]byte
-		binary.LittleEndian.PutUint64(seenBytes[:], seenCount)
-		bkt.Put(tag, seenBytes[:])
-		return nil
-	}); err != nil {
-		panic("BUG: mixkey: Failed to query/update the replay counter: " + err.Error())
+		return false
 	}
 
+	// Slow path, either a false positive or a replay.
+	//
+	// Note: It alternatively would be acceptable to just drop the packet,
+	// but k.isNotReplay()'s behavior will need to change on filter
+	// saturation.
+
+	// Peek into the write-back cache.
+	k.Lock()
+	_, isReplay = k.writeBack[tag]
+	defer k.Unlock()
+	if !isReplay {
+		// Well, it's not in the write-back cache, so query the database.
+		//
+		// Since we're stuck hitting the database anyway, might as well
+		// bypass the cache and save ourselves some pain.
+		if err := k.db.Update(func(tx *bolt.Tx) error {
+			bkt := tx.Bucket([]byte(replayBucket))
+			isReplay = testAndSetTagDB(bkt, tag[:])
+			return nil
+		}); err != nil {
+			panic("BUG: mixkey: Failed to query the replay filter: " + err.Error())
+		}
+	}
+	return isReplay
+}
+
+func testAndSetTagDB(bkt *bolt.Bucket, tag []byte) bool {
+	// Retreive the counter from the database for the tag if it exists.
+	//
+	// XXX: The counter isn't actually used for anything since it isn't
+	// returned.  Not sure if it makes sense to keep it, but I don't think
+	// it costs us anything substantial to do so.
+	var seenCount uint64
+	if b := bkt.Get(tag); b != nil {
+		if len(b) == 8 {
+			seenCount = binary.LittleEndian.Uint64(b)
+		} else {
+			// Treat invalid but present entries as being seen.
+			seenCount = 1
+		}
+	}
+	seenCount++         // Increment the counter by 1.
+	if seenCount == 0 { // Should never happen ever, but handle correctly.
+		seenCount = math.MaxUint64
+	}
+
+	// Write the (potentially incremented) counter.
+	var seenBytes [8]byte
+	binary.LittleEndian.PutUint64(seenBytes[:], seenCount)
+	bkt.Put(tag, seenBytes[:])
 	return seenCount != 1
+}
+
+func (k *MixKey) testAndSetTagMemory(tag *[TagLength]byte) bool {
+	k.Lock()
+	defer k.Unlock()
+
+	// If the filter is saturated then force a database lookup.
+	if k.f.Entries() >= k.f.MaxEntries() {
+		return true
+	}
+	isMaybeReplay := k.f.TestAndSet(tag[:])
+	if !isMaybeReplay {
+		// Add the tag to the write-back cache.
+		k.writeBack[*tag] = true
+	}
+	return isMaybeReplay
+}
+
+func (k *MixKey) worker() {
+	defer func() {
+		k.doFlush(true)
+		k.Done()
+	}()
+
+	ticker := time.NewTicker(writeBackInterval)
+	defer ticker.Stop()
+
+	for {
+		forceFlush := false
+		select {
+		case <-k.haltCh:
+			return
+		case <-k.flushCh:
+		case <-ticker.C:
+			forceFlush = true
+		}
+		k.doFlush(forceFlush)
+	}
+}
+
+func (k *MixKey) doFlush(forceFlush bool) {
+	k.Lock()
+	defer k.Unlock()
+
+	// Accumulate up to writeBackSize entries.
+	nEntries := len(k.writeBack)
+	if nEntries == 0 || (!forceFlush && nEntries < writeBackSize) {
+		return
+	}
+
+	if err := k.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(replayBucket))
+		for tag := range k.writeBack {
+			testAndSetTagDB(bkt, tag[:])
+		}
+		return nil
+	}); err != nil {
+		panic("BUG: mixkey: Failed to flush write-back cache: " + err.Error())
+	}
+	k.writeBack = make(map[[TagLength]byte]bool)
 }
 
 // Deref reduces the refcount by one, and closes the key if the refcount hits
@@ -133,7 +246,12 @@ func (k *MixKey) forceClose() {
 	if k.db != nil {
 		f := k.db.Path() // Cache so we can unlink after Close().
 
-		k.flush()
+		// Gracefully terminate the worker.
+		close(k.haltCh)
+		k.Wait()
+
+		// Force the DB to disk, and close.
+		k.db.Sync()
 		k.db.Close()
 		k.db = nil
 
@@ -155,14 +273,6 @@ func (k *MixKey) forceClose() {
 	}
 }
 
-func (k *MixKey) flush() error {
-	// TODO: When more sophistication is added, flush our cache.
-	// See IsReplay() for the planned "more sophistication".
-
-	k.db.Sync()
-	return nil
-}
-
 // New creates (or loads) a mix key in the provided data directory, for the
 // given epoch.
 func New(dataDir string, epoch uint64) (*MixKey, error) {
@@ -182,15 +292,23 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 	if err != nil {
 		return nil, err
 	}
+	k.f, err = bloom.New(rand.Reader, 29, 0.001) // 64 MiB, 37,240,820 entries.
+	if err != nil {
+		return nil, err
+	}
+	k.writeBack = make(map[[TagLength]byte]bool)
+	k.flushCh = make(chan interface{}, 1)
+	k.haltCh = make(chan interface{})
 
 	didCreate := false
 	if err := k.db.Update(func(tx *bolt.Tx) error {
-		// Ensure that all the buckets exist, and grab the metadata bucket.
+		// Ensure that all the buckets exist.
 		bkt, err := tx.CreateBucketIfNotExists([]byte(metadataBucket))
 		if err != nil {
 			return err
 		}
-		if _, err = tx.CreateBucketIfNotExists([]byte(replayBucket)); err != nil {
+		replayBkt, err := tx.CreateBucketIfNotExists([]byte(replayBucket))
+		if err != nil {
 			return err
 		}
 
@@ -221,11 +339,19 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 			}
 
 			// Ensure the epoch is sane.
-			if dbEpoch, err := getUint64(epochKey); err != nil {
+			var dbEpoch uint64
+			dbEpoch, err = getUint64(epochKey)
+			if err != nil {
 				return err
 			} else if dbEpoch != epoch {
 				return fmt.Errorf("mixkey: db epoch mismatch")
 			}
+
+			// Rebuild the bloom filter.
+			replayBkt.ForEach(func(tag, rawCount []byte) error {
+				k.f.TestAndSet(tag)
+				return nil
+			})
 
 			return nil
 		}
@@ -253,6 +379,9 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 		// Flush the newly created database to disk.
 		k.db.Sync()
 	}
+
+	k.Add(1)
+	go k.worker()
 
 	return k, nil
 }
