@@ -96,9 +96,8 @@ func (k *MixKey) IsReplay(rawTag []byte) bool {
 	copy(tag[:], rawTag)
 
 	// Check the bloom filter for the tag, to see if it might be a replay.
-	isReplay := false
-	notReplay := !k.testAndSetTagMemory(&tag)
-	if notReplay {
+	maybeReplay, inWriteBack := k.testAndSetTagMemory(&tag)
+	if !maybeReplay {
 		// k.isNotReplay() will add the tag to the write-back cache, so
 		// just poke the flush routine and return.
 		select {
@@ -116,15 +115,13 @@ func (k *MixKey) IsReplay(rawTag []byte) bool {
 	// but k.isNotReplay()'s behavior will need to change on filter
 	// saturation.
 
-	// Peek into the write-back cache.
-	k.Lock()
-	_, isReplay = k.writeBack[tag]
-	defer k.Unlock()
+	isReplay := inWriteBack
 	if !isReplay {
 		// Well, it's not in the write-back cache, so query the database.
 		//
 		// Since we're stuck hitting the database anyway, might as well
-		// bypass the cache and save ourselves some pain.
+		// bypass the cache and save ourselves some pain by doing the
+		// insertion here.
 		if err := k.db.Update(func(tx *bolt.Tx) error {
 			bkt := tx.Bucket([]byte(replayBucket))
 			isReplay = testAndSetTagDB(bkt, tag[:])
@@ -163,20 +160,24 @@ func testAndSetTagDB(bkt *bolt.Bucket, tag []byte) bool {
 	return seenCount != 1
 }
 
-func (k *MixKey) testAndSetTagMemory(tag *[TagLength]byte) bool {
+func (k *MixKey) testAndSetTagMemory(tag *[TagLength]byte) (bool, bool) {
 	k.Lock()
 	defer k.Unlock()
 
 	// If the filter is saturated then force a database lookup.
 	if k.f.Entries() >= k.f.MaxEntries() {
-		return true
+		return true, true
 	}
-	isMaybeReplay := k.f.TestAndSet(tag[:])
-	if !isMaybeReplay {
-		// Add the tag to the write-back cache.
+	if !k.f.TestAndSet(tag[:]) {
+		// The tag is not in the bloom filter, so by definition it is not a replay.
+
+		// Insert it into the write-back cache.
 		k.writeBack[*tag] = true
+		return false, true
 	}
-	return isMaybeReplay
+
+	// Do the write-back cache lookup while we hold the lock.
+	return true, k.writeBack[*tag]
 }
 
 func (k *MixKey) worker() {
