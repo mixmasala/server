@@ -28,6 +28,7 @@ import (
 	"github.com/eapache/channels"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/thwack"
 	"github.com/katzenpost/server/config"
 	"github.com/katzenpost/server/internal/log"
@@ -220,19 +221,21 @@ func New(cfg *config.Config) (*Server, error) {
 	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
 
 	// Initialize the server identity and link keys.
-	if err := s.initIdentity(); err != nil {
+	var err error
+	identityKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
+	if s.identityKey, err = eddsa.Load(identityKeyFile, rand.Reader); err != nil {
 		s.log.Errorf("Failed to initialize identity: %v", err)
 		return nil, err
 	}
 	s.log.Noticef("Server identity public key is: %s", s.identityKey.PublicKey())
-	if err := s.initLink(); err != nil {
+	linkKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
+	if s.linkKey, err = ecdh.Load(linkKeyFile, rand.Reader); err != nil {
 		s.log.Errorf("Failed to initialize link key: %v", err)
 		return nil, err
 	}
 	s.log.Noticef("Server link public key is: %s", s.linkKey.PublicKey())
 
 	// Load and or generate mix keys.
-	var err error
 	if s.mixKeys, err = newMixKeys(s); err != nil {
 		s.log.Errorf("Failed to initialize mix keys: %v", err)
 		return nil, err
