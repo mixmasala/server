@@ -35,8 +35,6 @@ import (
 	"github.com/op/go-logging"
 )
 
-const fileMode = 0600
-
 // ErrGenerateOnly is the error returned when the server initialization
 // terminates due to the `GenerateOnly` debug config option.
 var ErrGenerateOnly = errors.New("server: GenerateOnly set")
