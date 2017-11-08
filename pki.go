@@ -25,6 +25,7 @@ import (
 
 	"github.com/katzenpost/authority/nonvoting"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
@@ -598,11 +599,15 @@ func newPKI(s *Server) (*pki, error) {
 	p.haltCh = make(chan interface{})
 
 	if s.cfg.PKI.Nonvoting != nil {
-		var err error
+		authPk := new(eddsa.PublicKey)
+		err := authPk.FromString(s.cfg.PKI.Nonvoting.PublicKey)
+		if err != nil {
+			panic("BUG: Failed to deserialize validated public key: " + err.Error())
+		}
 		pkiCfg := &nonvoting.ClientConfig{
 			LogBackend: s.logBackend,
 			Address:    s.cfg.PKI.Nonvoting.Address,
-			PublicKey:  s.cfg.PKI.Nonvoting.DeserializedPublicKey(),
+			PublicKey:  authPk,
 		}
 		p.impl, err = nonvoting.NewClient(pkiCfg)
 		if err != nil {

@@ -18,7 +18,6 @@
 package config
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -257,13 +256,6 @@ type Nonvoting struct {
 
 	// PublicKey is the authority's public key in Base64 or Base16 format.
 	PublicKey string
-
-	pubKey *eddsa.PublicKey
-}
-
-// DeserializedPublicKey returns the deserialized authority's public key.
-func (nCfg *Nonvoting) DeserializedPublicKey() *eddsa.PublicKey {
-	return nCfg.pubKey
 }
 
 func (nCfg *Nonvoting) validate() error {
@@ -275,20 +267,12 @@ func (nCfg *Nonvoting) validate() error {
 		return fmt.Errorf("config: PKI/Nonvoting: Address '%v' is not an IP", host)
 	}
 
-	// Deserialize the public key now.
-	nCfg.pubKey = new(eddsa.PublicKey)
-	if b, err := hex.DecodeString(nCfg.PublicKey); err == nil {
-		// It looks like it is Base16.
-		if err = nCfg.pubKey.FromBytes(b); err != nil {
-			return fmt.Errorf("config: PKI/Nonvoting: Invalid PublicKey: %v", err)
-		}
-		return nil
-	}
-	if err := nCfg.pubKey.UnmarshalText([]byte(nCfg.PublicKey)); err == nil {
-		return nil
+	var pubKey eddsa.PublicKey
+	if err := pubKey.FromString(nCfg.PublicKey); err != nil {
+		return fmt.Errorf("config: PKI/Nonvoting: Invalid PublicKey: %v", err)
 	}
 
-	return fmt.Errorf("config: PKI/Nonvoting: Failed to parse PublicKey")
+	return nil
 }
 
 // Management is the Katzenpost management interface configuration.

@@ -37,6 +37,11 @@ IsProvider = true
 
 [Logging]
 Level = "DEBUG"
+
+[PKI]
+[PKI.Nonvoting]
+Address = "127.0.0.1:6999"
+PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
 `
 
 	cfg, err := Load([]byte(basicConfig))
