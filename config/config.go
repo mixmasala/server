@@ -18,6 +18,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -26,6 +27,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/pelletier/go-toml"
 )
@@ -228,6 +230,67 @@ func (pCfg *Provider) validate() error {
 	return nil
 }
 
+// PKI is the Katzenpost directory authority configuration.
+type PKI struct {
+	// Nonvoting is a non-voting directory authority.
+	Nonvoting *Nonvoting
+}
+
+func (pCfg *PKI) validate() error {
+	nrCfg := 0
+	if pCfg.Nonvoting != nil {
+		if err := pCfg.Nonvoting.validate(); err != nil {
+			return err
+		}
+		nrCfg++
+	}
+	if nrCfg != 1 {
+		return fmt.Errorf("config: Only one authority backend should be configured, got: %v", nrCfg)
+	}
+	return nil
+}
+
+// Nonvoting is a non-voting directory authority.
+type Nonvoting struct {
+	// Address is the authority's IP/port combination.
+	Address string
+
+	// PublicKey is the authority's public key in Base64 or Base16 format.
+	PublicKey string
+
+	pubKey *eddsa.PublicKey
+}
+
+// DeserializedPublicKey returns the deserialized authority's public key.
+func (nCfg *Nonvoting) DeserializedPublicKey() *eddsa.PublicKey {
+	return nCfg.pubKey
+}
+
+func (nCfg *Nonvoting) validate() error {
+	host, _, err := net.SplitHostPort(nCfg.Address)
+	if err != nil {
+		return err
+	}
+	if net.ParseIP(host) == nil {
+		return fmt.Errorf("config: PKI/Nonvoting: Address '%v' is not an IP", host)
+	}
+
+	// Deserialize the public key now.
+	nCfg.pubKey = new(eddsa.PublicKey)
+	if b, err := hex.DecodeString(nCfg.PublicKey); err == nil {
+		// It looks like it is Base16.
+		if err = nCfg.pubKey.FromBytes(b); err != nil {
+			return fmt.Errorf("config: PKI/Nonvoting: Invalid PublicKey: %v", err)
+		}
+		return nil
+	}
+	if err := nCfg.pubKey.UnmarshalText([]byte(nCfg.PublicKey)); err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("config: PKI/Nonvoting: Failed to parse PublicKey")
+}
+
 // Management is the Katzenpost management interface configuration.
 type Management struct {
 	// Enable enables the management interface.
@@ -256,10 +319,10 @@ func (mCfg *Management) validate() error {
 
 // Config is the top level Katzenpost server configuration.
 type Config struct {
-	Server   *Server
-	Logging  *Logging
-	Provider *Provider
-	// XXX: PKI.
+	Server     *Server
+	Logging    *Logging
+	Provider   *Provider
+	PKI        *PKI
 	Management *Management
 
 	Debug *Debug
@@ -273,7 +336,7 @@ func Load(b []byte) (*Config, error) {
 		return nil, err
 	}
 
-	// The Server section is mandatory, everything else is optional.
+	// The Server and PKI sections are mandatory, everything else is optional.
 	if cfg.Server == nil {
 		return nil, errors.New("config: No Server block was present")
 	}
@@ -283,12 +346,18 @@ func Load(b []byte) (*Config, error) {
 	if cfg.Logging == nil {
 		cfg.Logging = &defaultLogging
 	}
+	if cfg.PKI == nil {
+		return nil, errors.New("config: No PKI block was present")
+	}
 	if cfg.Management == nil {
 		cfg.Management = &Management{}
 	}
 
 	// Perform basic validation.
 	if err := cfg.Server.validate(); err != nil {
+		return nil, err
+	}
+	if err := cfg.PKI.validate(); err != nil {
 		return nil, err
 	}
 	if cfg.Server.IsProvider {

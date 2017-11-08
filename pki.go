@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/katzenpost/authority/nonvoting"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/core/pki"
@@ -589,18 +590,30 @@ func (p *pki) isValidForwardDest(id *[constants.NodeIDLength]byte) bool {
 	return doc.outgoing[*id] != nil
 }
 
-func newPKI(s *Server) *pki {
+func newPKI(s *Server) (*pki, error) {
 	p := new(pki)
 	p.s = s
 	p.log = s.logBackend.GetLogger("pki")
 	p.docs = make(map[uint64]*pkiCacheEntry)
 	p.haltCh = make(chan interface{})
 
-	// XXX/pki: Initialize the concrete implementation.
+	if s.cfg.PKI.Nonvoting != nil {
+		var err error
+		pkiCfg := &nonvoting.ClientConfig{
+			LogBackend: s.logBackend,
+			Address:    s.cfg.PKI.Nonvoting.Address,
+			PublicKey:  s.cfg.PKI.Nonvoting.DeserializedPublicKey(),
+		}
+		p.impl, err = nonvoting.NewClient(pkiCfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// TODO: Wire in a real PKI implementation in addition to the test one.
 
 	// Note: This does not start the worker immediately since the worker can
 	// make calls into the connector and crypto workers (on PKI updates),
 	// which are initialized after the pki object.
 
-	return p
+	return p, nil
 }

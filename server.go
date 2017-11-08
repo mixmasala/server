@@ -183,7 +183,9 @@ func (s *Server) halt() {
 	}
 
 	// Clean up the top level components.
-	s.inboundPackets.Close()
+	if s.inboundPackets != nil {
+		s.inboundPackets.Close()
+	}
 	s.linkKey.Reset()
 	s.identityKey.Reset()
 
@@ -272,7 +274,10 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize the PKI interface.
-	s.pki = newPKI(s)
+	if s.pki, err = newPKI(s); err != nil {
+		s.log.Errorf("Failed to initialize PKI client: %v", err)
+		return nil, err
+	}
 
 	// Initialize the provider backend.
 	if s.cfg.Server.IsProvider {
