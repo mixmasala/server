@@ -165,7 +165,7 @@ func doBenchIsReplayHit(b *testing.B) {
 	var tag [TagLength]byte
 	rand.Read(tag[:])
 	k.IsReplay(tag[:]) // Add as a replay.
-	k.doFlush(true) // Flush the write-back cache.
+	k.doFlush(true)    // Flush the write-back cache.
 
 	count := 0
 	b.ResetTimer()
