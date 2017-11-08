@@ -21,13 +21,13 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/core/utils"
 	"github.com/pelletier/go-toml"
 )
 
@@ -75,12 +75,8 @@ func (sCfg *Server) validate() error {
 
 	if sCfg.Addresses != nil {
 		for _, v := range sCfg.Addresses {
-			host, _, err := net.SplitHostPort(v)
-			if err != nil {
-				return err
-			}
-			if net.ParseIP(host) == nil {
-				return fmt.Errorf("config: Server: Address '%v' is not an IP", host)
+			if err := utils.EnsureAddrIPPort(v); err != nil {
+				return fmt.Errorf("config: Server: Address '%v' is invalid: %v", v, err)
 			}
 		}
 	} else {
@@ -259,12 +255,8 @@ type Nonvoting struct {
 }
 
 func (nCfg *Nonvoting) validate() error {
-	host, _, err := net.SplitHostPort(nCfg.Address)
-	if err != nil {
-		return err
-	}
-	if net.ParseIP(host) == nil {
-		return fmt.Errorf("config: PKI/Nonvoting: Address '%v' is not an IP", host)
+	if err := utils.EnsureAddrIPPort(nCfg.Address); err != nil {
+		return fmt.Errorf("config: PKI/Nonvoting: Address is invalid: %v", err)
 	}
 
 	var pubKey eddsa.PublicKey
