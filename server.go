@@ -220,9 +220,14 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Initialize the server identity and link keys.
 	var err error
-	identityKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
-	if s.identityKey, err = eddsa.Load(identityKeyFile, rand.Reader); err != nil {
+	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
+	if s.identityKey, err = eddsa.Load(identityPrivateKeyFile, rand.Reader); err != nil {
 		s.log.Errorf("Failed to initialize identity: %v", err)
+		return nil, err
+	}
+	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
+	if err = s.identityKey.PublicKey().ToPEMFile(identityPublicKeyFile); err != nil {
+		s.log.Errorf("Failed to write identity public key: %v", err)
 		return nil, err
 	}
 	s.log.Noticef("Server identity public key is: %s", s.identityKey.PublicKey())
