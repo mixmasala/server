@@ -61,7 +61,9 @@ type Server struct {
 	provider      *provider
 	management    *thwack.Server
 
-	haltOnce sync.Once
+	fatalErrCh chan error
+	haltedCh   chan interface{}
+	haltOnce   sync.Once
 }
 
 func (s *Server) initDataDir() error {
@@ -114,6 +116,11 @@ func (s *Server) reshadowCryptoWorkers() {
 // Shutdown cleanly shuts down a given Server instance.
 func (s *Server) Shutdown() {
 	s.haltOnce.Do(func() { s.halt() })
+}
+
+// Wait waits till the server is terminated for any reason.
+func (s *Server) Wait() {
+	<-s.haltedCh
 }
 
 func (s *Server) halt() {
@@ -188,8 +195,10 @@ func (s *Server) halt() {
 	}
 	s.linkKey.Reset()
 	s.identityKey.Reset()
+	close(s.fatalErrCh)
 
 	s.log.Noticef("Shutdown complete.")
+	close(s.haltedCh)
 }
 
 // New returns a new Server instance parameterized with the specified
@@ -197,6 +206,8 @@ func (s *Server) halt() {
 func New(cfg *config.Config) (*Server, error) {
 	s := new(Server)
 	s.cfg = cfg
+	s.fatalErrCh = make(chan error)
+	s.haltedCh = make(chan interface{})
 
 	// Do the early initialization and bring up logging.
 	if err := s.initDataDir(); err != nil {
@@ -256,6 +267,17 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, ErrGenerateOnly
 	}
 
+	// Start the fatal error watcher.
+	go func() {
+		err, ok := <-s.fatalErrCh
+		if !ok {
+			// Graceful termination.
+			return
+		}
+		s.log.Warningf("Shutting down due to error: %v", err)
+		s.Shutdown()
+	}()
+
 	// Initialize the management interface if enabled.
 	//
 	// Note: This is done first so that other subsystems may register commands.
@@ -271,6 +293,12 @@ func New(cfg *config.Config) (*Server, error) {
 			s.log.Errorf("Failed to initialize management interface: %v", err)
 			return nil, err
 		}
+
+		const shutdownCmd = "SHUTDOWN"
+		s.management.RegisterCommand(shutdownCmd, func(c *thwack.Conn, l string) error {
+			s.fatalErrCh <- fmt.Errorf("user requested shutdown via mgmt interface")
+			return nil
+		})
 	}
 
 	// Initialize the PKI interface.
