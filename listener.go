@@ -119,7 +119,7 @@ func (l *listener) isConnUnique(c *incomingConn) bool {
 		if bytes.Equal(a.AdditionalData, b.AdditionalData) {
 			return false
 		}
-		if bytes.Equal(a.PublicKey.Bytes(), b.PublicKey.Bytes()) {
+		if a.PublicKey.Equal(b.PublicKey) {
 			return false
 		}
 	}

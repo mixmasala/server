@@ -17,7 +17,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"sync"
@@ -469,7 +468,7 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 		if !ok {
 			continue
 		}
-		if !bytes.Equal(m.LinkKey.Bytes(), c.PublicKey.Bytes()) {
+		if !m.LinkKey.Equal(c.PublicKey) {
 			// The LinkKey that is being used for authentication should
 			// match what is listed in the descriptor.
 			p.log.Warningf("Incoming: '%v' Public Key mismatch: '%v'", bytesToPrintString(c.AdditionalData), c.PublicKey)
@@ -525,7 +524,7 @@ func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescr
 		if !ok {
 			continue
 		}
-		if !bytes.Equal(m.LinkKey.Bytes(), c.PublicKey.Bytes()) {
+		if !m.LinkKey.Equal(c.PublicKey) {
 			// The LinkKey that is being used for authentication should
 			// match what is listed in the descriptor.
 			p.log.Warningf("Outgoing: '%v' Public Key mismatch: '%v'", bytesToPrintString(c.AdditionalData), c.PublicKey)

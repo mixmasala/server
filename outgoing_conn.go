@@ -52,7 +52,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if !bytes.Equal(c.dst.IdentityKey.Bytes(), creds.AdditionalData) {
 		return false
 	}
-	if !bytes.Equal(c.dst.LinkKey.Bytes(), creds.PublicKey.Bytes()) {
+	if !c.dst.LinkKey.Equal(creds.PublicKey) {
 		return false
 	}
 
