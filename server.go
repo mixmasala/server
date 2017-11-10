@@ -95,7 +95,9 @@ func (s *Server) initDataDir() error {
 func (s *Server) initLogging() error {
 	p := s.cfg.Logging.File
 	if !s.cfg.Logging.Disable && s.cfg.Logging.File != "" {
-		p = filepath.Join(s.cfg.Server.DataDir, p)
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(s.cfg.Server.DataDir, p)
+		}
 	}
 
 	var err error
