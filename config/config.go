@@ -83,7 +83,7 @@ func (sCfg *Server) validate() error {
 		// Try to guess a "suitable" external IPv4 address.  If people want
 		// to do loopback testing, they can manually specify one.  If people
 		// want to use IPng, they can manually specify that as well.
-		addr, err := getExternalAddress()
+		addr, err := utils.GetExternalIPv4Address()
 		if err != nil {
 			return err
 		}
