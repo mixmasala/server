@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/authority/nonvoting"
+	nClient "github.com/katzenpost/authority/nonvoting/client"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/epochtime"
@@ -603,12 +603,12 @@ func newPKI(s *Server) (*pki, error) {
 		if err != nil {
 			panic("BUG: Failed to deserialize validated public key: " + err.Error())
 		}
-		pkiCfg := &nonvoting.ClientConfig{
+		pkiCfg := &nClient.Config{
 			LogBackend: s.logBackend,
 			Address:    s.cfg.PKI.Nonvoting.Address,
 			PublicKey:  authPk,
 		}
-		p.impl, err = nonvoting.NewClient(pkiCfg)
+		p.impl, err = nClient.New(pkiCfg)
 		if err != nil {
 			return nil, err
 		}
