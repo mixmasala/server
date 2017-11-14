@@ -136,8 +136,7 @@ func (co *connector) spawnNewConns() {
 }
 
 func (co *connector) onNewConn(c *outgoingConn) {
-	var tmp [constants.NodeIDLength]byte
-	copy(tmp[:], c.dst.IdentityKey.Bytes())
+	nodeID := c.dst.IdentityKey.ByteArray()
 
 	co.closeAllWg.Add(1)
 	co.Lock()
@@ -145,23 +144,22 @@ func (co *connector) onNewConn(c *outgoingConn) {
 		co.Unlock()
 		go c.worker()
 	}()
-	if _, ok := co.conns[tmp]; ok {
+	if _, ok := co.conns[nodeID]; ok {
 		// This should NEVER happen.  Not sure what the sensible thing to do is.
-		co.log.Warningf("Connection to peer: '%v' already exists.", nodeIDToPrintString(&tmp))
+		co.log.Warningf("Connection to peer: '%v' already exists.", nodeIDToPrintString(&nodeID))
 	}
-	co.conns[tmp] = c
+	co.conns[nodeID] = c
 }
 
 func (co *connector) onClosedConn(c *outgoingConn) {
-	var tmp [constants.NodeIDLength]byte
-	copy(tmp[:], c.dst.IdentityKey.Bytes())
+	nodeID := c.dst.IdentityKey.ByteArray()
 
 	co.Lock()
 	defer func() {
 		co.Unlock()
 		co.closeAllWg.Done()
 	}()
-	delete(co.conns, tmp)
+	delete(co.conns, nodeID)
 }
 
 func newConnector(s *Server) *connector {

@@ -114,9 +114,8 @@ func newPKICacheEntry(s *Server, d *cpki.Document) (*pkiCacheEntry, error) {
 			nodes = e.doc.Topology[layer]
 		}
 		for _, v := range nodes {
-			var id [constants.NodeIDLength]byte
-			copy(id[:], v.IdentityKey.Bytes())
-			m[id] = v
+			nodeID := v.IdentityKey.ByteArray()
+			m[nodeID] = v
 		}
 	}
 	buildMap(e.incomingLayer(), e.incoming)
@@ -459,12 +458,12 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 		p.log.Debugf("Incoming: '%v' AD not an IdentityKey?.", bytesToPrintString(c.AdditionalData))
 		return false, false
 	}
-	var id [constants.NodeIDLength]byte
-	copy(id[:], c.AdditionalData)
+	var nodeID [constants.NodeIDLength]byte
+	copy(nodeID[:], c.AdditionalData)
 
 	docs := p.docsForEpochs(epochs)
 	for _, d := range docs {
-		m, ok := d.incoming[id]
+		m, ok := d.incoming[nodeID]
 		if !ok {
 			continue
 		}
@@ -515,12 +514,12 @@ func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescr
 
 	// Don't need to check length here because all callers either explicitly
 	// set this, or validate it (assuming it's coming from a peer).
-	var id [constants.NodeIDLength]byte
-	copy(id[:], c.AdditionalData)
+	var nodeID [constants.NodeIDLength]byte
+	copy(nodeID[:], c.AdditionalData)
 
 	docs, now := p.docsForOutgoing()
 	for _, d := range docs {
-		m, ok := d.outgoing[id]
+		m, ok := d.outgoing[nodeID]
 		if !ok {
 			continue
 		}
@@ -557,12 +556,11 @@ func (p *pki) outgoingDestinations() map[[constants.NodeIDLength]byte]*cpki.MixD
 
 	for _, d := range docs {
 		for _, v := range d.outgoing {
-			var id [constants.NodeIDLength]byte
-			copy(id[:], v.IdentityKey.Bytes())
+			nodeID := v.IdentityKey.ByteArray()
 
 			// De-duplicate.
-			if _, ok := descMap[id]; !ok {
-				descMap[id] = v
+			if _, ok := descMap[nodeID]; !ok {
+				descMap[nodeID] = v
 			}
 		}
 	}
