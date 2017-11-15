@@ -115,6 +115,11 @@ func (s *Server) reshadowCryptoWorkers() {
 	}
 }
 
+// IdentityKey returns the running server's identity public key.
+func (s *Server) IdentityKey() *eddsa.PublicKey {
+	return s.identityKey.PublicKey()
+}
+
 // Shutdown cleanly shuts down a given Server instance.
 func (s *Server) Shutdown() {
 	s.haltOnce.Do(func() { s.halt() })
