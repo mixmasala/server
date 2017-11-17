@@ -91,6 +91,13 @@ func (l *listener) onNewConn(conn net.Conn) {
 	c.e = l.conns.PushFront(c)
 }
 
+func (l *listener) onInitializedConn(c *incomingConn) {
+	l.Lock()
+	defer l.Unlock()
+
+	c.isInitialized = true
+}
+
 func (l *listener) onClosedConn(c *incomingConn) {
 	l.Lock()
 	defer func() {
@@ -110,7 +117,7 @@ func (l *listener) isConnUnique(c *incomingConn) bool {
 		cc := e.Value.(*incomingConn)
 
 		// Skip checking a conn against itself, or against pre-handshake conns.
-		if cc == c || cc.w == nil {
+		if cc == c || cc.w == nil || !cc.isInitialized {
 			continue
 		}
 

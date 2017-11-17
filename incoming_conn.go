@@ -42,11 +42,12 @@ type incomingConn struct {
 	w   *wire.Session
 	log *logging.Logger
 
-	id         uint64
-	retrSeq    uint32
-	fromClient bool
-	fromMix    bool
-	canSend    bool
+	id            uint64
+	retrSeq       uint32
+	isInitialized bool // Set by listener.
+	fromClient    bool
+	fromMix       bool
+	canSend       bool
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -108,6 +109,7 @@ func (c *incomingConn) worker() {
 		return
 	}
 	c.c.SetDeadline(time.Time{})
+	c.l.onInitializedConn(c)
 
 	// Ensure that there's only one incoming conn from any given peer, though
 	// this only really matters for user sessions.  The easiest thing to do
