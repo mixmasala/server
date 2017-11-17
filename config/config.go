@@ -98,11 +98,8 @@ func (sCfg *Server) validate() error {
 
 // Debug is the Katzenpost server debug configuration.
 type Debug struct {
-	// DisableKeyRotation disables the mix key rotation.
-	DisableKeyRotation bool
-
-	// DisableMixAuthentication disables the mix incoming peer authentication.
-	DisableMixAuthentication bool
+	// ForceIdentityKey specifies a hex encoded identity private key.
+	ForceIdentityKey string
 
 	// NumSphinxWorkers specifies the number of worker instances to use for
 	// inbound Sphinx packet processing.
@@ -133,13 +130,19 @@ type Debug struct {
 	// reauthenticated in milliseconds.
 	ReauthInterval int
 
+	// DisableKeyRotation disables the mix key rotation.
+	DisableKeyRotation bool
+
+	// DisableMixAuthentication disables the mix incoming peer authentication.
+	DisableMixAuthentication bool
+
 	// GenerateOnly halts and cleans up the server right after key generation.
 	GenerateOnly bool
 }
 
 // IsUnsafe returns true iff any debug options that destroy security are set.
 func (dCfg *Debug) IsUnsafe() bool {
-	return dCfg.DisableKeyRotation || dCfg.DisableMixAuthentication
+	return dCfg.ForceIdentityKey != "" || dCfg.DisableKeyRotation || dCfg.DisableMixAuthentication
 }
 
 func (dCfg *Debug) applyDefaults() {

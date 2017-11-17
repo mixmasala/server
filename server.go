@@ -18,10 +18,12 @@
 package server
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"git.schwanenlied.me/yawning/aez.git"
@@ -240,11 +242,26 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Initialize the server identity and link keys.
 	var err error
-	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
-	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
-	if s.identityKey, err = eddsa.Load(identityPrivateKeyFile, identityPublicKeyFile, rand.Reader); err != nil {
-		s.log.Errorf("Failed to initialize identity: %v", err)
-		return nil, err
+	if s.cfg.Debug.ForceIdentityKey != "" {
+		s.log.Warning("ForceIdentityKey should NOT be used for production deployments.")
+		keyStr := strings.TrimSpace(s.cfg.Debug.ForceIdentityKey)
+		raw, err := hex.DecodeString(keyStr)
+		if err != nil {
+			s.log.Errorf("Failed to parse forced identity: %v", err)
+			return nil, err
+		}
+		s.identityKey = new(eddsa.PrivateKey)
+		if err = s.identityKey.FromBytes(raw); err != nil {
+			s.log.Errorf("Failed to initialize identity: %v", err)
+			return nil, err
+		}
+	} else {
+		identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
+		identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
+		if s.identityKey, err = eddsa.Load(identityPrivateKeyFile, identityPublicKeyFile, rand.Reader); err != nil {
+			s.log.Errorf("Failed to initialize identity: %v", err)
+			return nil, err
+		}
 	}
 	s.log.Noticef("Server identity public key is: %s", s.identityKey.PublicKey())
 	linkKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
