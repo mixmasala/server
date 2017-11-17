@@ -307,17 +307,13 @@ type Config struct {
 	Debug *Debug
 }
 
-// Load parses and validates the provided buffer b as a config file body and
-// returns the Config.
-func Load(b []byte) (*Config, error) {
-	cfg := new(Config)
-	if err := toml.Unmarshal(b, cfg); err != nil {
-		return nil, err
-	}
-
+// FixupAndValidate applies defaults to config entries and validates the
+// supplied configuration.  Most people should call one of the Load variants
+// instead.
+func (cfg *Config) FixupAndValidate() error {
 	// The Server and PKI sections are mandatory, everything else is optional.
 	if cfg.Server == nil {
-		return nil, errors.New("config: No Server block was present")
+		return errors.New("config: No Server block was present")
 	}
 	if cfg.Debug == nil {
 		cfg.Debug = &Debug{}
@@ -326,7 +322,7 @@ func Load(b []byte) (*Config, error) {
 		cfg.Logging = &defaultLogging
 	}
 	if cfg.PKI == nil {
-		return nil, errors.New("config: No PKI block was present")
+		return errors.New("config: No PKI block was present")
 	}
 	if cfg.Management == nil {
 		cfg.Management = &Management{}
@@ -334,14 +330,14 @@ func Load(b []byte) (*Config, error) {
 
 	// Perform basic validation.
 	if err := cfg.Server.validate(); err != nil {
-		return nil, err
+		return err
 	}
 	if err := cfg.PKI.validate(); err != nil {
-		return nil, err
+		return err
 	}
 	if cfg.Server.IsProvider {
 		if cfg.Debug.DisableMixAuthentication {
-			return nil, errors.New("config: DisableMixAuthentication set when not a Mix")
+			return errors.New("config: DisableMixAuthentication set when not a Mix")
 		}
 
 		if cfg.Provider == nil {
@@ -349,19 +345,33 @@ func Load(b []byte) (*Config, error) {
 		}
 		cfg.Provider.applyDefaults(cfg.Server)
 		if err := cfg.Provider.validate(); err != nil {
-			return nil, err
+			return err
 		}
 	} else if cfg.Provider != nil {
-		return nil, errors.New("config: Provider block set when not a Provider")
+		return errors.New("config: Provider block set when not a Provider")
 	}
 	if err := cfg.Logging.validate(); err != nil {
-		return nil, err
+		return err
 	}
 	cfg.Management.applyDefaults(cfg.Server)
 	if err := cfg.Management.validate(); err != nil {
-		return nil, err
+		return err
 	}
 	cfg.Debug.applyDefaults()
+
+	return nil
+}
+
+// Load parses and validates the provided buffer b as a config file body and
+// returns the Config.
+func Load(b []byte) (*Config, error) {
+	cfg := new(Config)
+	if err := toml.Unmarshal(b, cfg); err != nil {
+		return nil, err
+	}
+	if err := cfg.FixupAndValidate(); err != nil {
+		return nil, err
+	}
 
 	return cfg, nil
 }
