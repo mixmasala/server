@@ -32,6 +32,8 @@ import (
 	"github.com/op/go-logging"
 )
 
+const keepAliveInterval = 3 * time.Minute
+
 var outgoingConnID uint64
 
 type outgoingConn struct {
@@ -103,7 +105,8 @@ func (c *outgoingConn) worker() {
 	dialCtx, cancelFn := context.WithCancel(context.Background())
 	defer cancelFn()
 	dialer := net.Dialer{
-		Timeout: time.Duration(c.s.cfg.Debug.ConnectTimeout) * time.Millisecond,
+		KeepAlive: keepAliveInterval,
+		Timeout:   time.Duration(c.s.cfg.Debug.ConnectTimeout) * time.Millisecond,
 	}
 	go func() {
 		// Bolt a bunch of channels to the dial canceler, such that closing
@@ -154,6 +157,7 @@ func (c *outgoingConn) worker() {
 				}
 			case <-dialCtx.Done():
 				// Canceled mid-retry delay.
+				c.log.Debugf("(Re)connection attempts canceled.")
 				return
 			}
 
@@ -173,14 +177,23 @@ func (c *outgoingConn) worker() {
 					continue
 				}
 			}
+			c.log.Debugf("TCP connection established.")
+			start := time.Now()
 
 			// Handle the new connection.
 			if c.onConnEstablished(conn, dialCtx.Done()) {
 				// Canceled with a connection established.
+				c.log.Debugf("Existing connection canceled.")
 				return
 			}
 
 			// That's odd, the connection died, reconnect.
+			c.log.Debugf("Connection terminated, will reconnect.")
+			if time.Now().Sub(start) < retryIncrement {
+				// If the connection was not alive for a sensible amount of
+				// time, re-impose a reconnect delay.
+				c.retryDelay = retryIncrement
+			}
 			break
 		}
 	}
@@ -213,8 +226,26 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		c.log.Errorf("Handshake failed: %v", err)
 		return
 	}
+	c.log.Debugf("Handshake completed.")
 	conn.SetDeadline(time.Time{})
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
+
+	// Since outgoing connections have no reverse traffic, read from the
+	// reverse path to detect that the connection has been closed.
+	//
+	// Incoming connections do not need similar treatment by virtue of
+	// the fact that they are constantly reading.
+	peerClosedCh := make(chan interface{})
+	go func() {
+		var oneByte [1]byte
+		if n, err := conn.Read(oneByte[:]); n != 0 || err == nil {
+			// This should *NEVER* happen past the handshake,
+			// and is an invariant violation that will force close
+			// the connection.
+			c.log.Warningf("Peer sent reverse traffic.")
+		}
+		close(peerClosedCh)
+	}()
 
 	pktCh := make(chan *packet)
 	pktCloseCh := make(chan error)
@@ -248,6 +279,9 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	for {
 		var pkt *packet
 		select {
+		case <-peerClosedCh:
+			c.log.Debugf("Connection closed by peer.")
+			return
 		case <-closeCh:
 			wasHalted = true
 			return
@@ -303,6 +337,8 @@ func newOutgoingConn(co *connector, dst *cpki.MixDescriptor) *outgoingConn {
 	c.ch = make(chan *packet, maxQueueSize)
 	c.id = atomic.AddUint64(&outgoingConnID, 1) // Diagnostic only, wrapping is fine.
 	c.log = co.s.logBackend.GetLogger(fmt.Sprintf("outgoing:%d", c.id))
+
+	c.log.Debugf("New outgoing connection: %+v", dst)
 
 	// Note: Unlike most other things, this does not spawn the worker here,
 	// because the worker needs to be spawned after the struct is added to

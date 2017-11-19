@@ -39,7 +39,7 @@ func asciiBytesToPrintString(ad []byte) string {
 	// printable representation of a byte sequence for debug logging, and it's
 	// slow.
 	for _, v := range ad {
-		if unicode.IsPrint(rune(v)) {
+		if v <= unicode.MaxASCII && unicode.IsPrint(rune(v)) {
 			r = append(r, v)
 		} else {
 			r = append(r, '*') // At least I didn't pick `:poop:`.

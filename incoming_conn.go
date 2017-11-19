@@ -76,6 +76,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if isValid {
 		c.fromMix = true
 	}
+	c.log.Debugf("Authenticate Peer: '%v' (%v): %v", bytesToPrintString(creds.AdditionalData), creds.PublicKey, isValid)
 	return isValid
 }
 
@@ -108,6 +109,7 @@ func (c *incomingConn) worker() {
 		c.log.Errorf("Handshake failed: %v", err)
 		return
 	}
+	c.log.Debugf("Handshake completed.")
 	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
 
@@ -214,6 +216,7 @@ func (c *incomingConn) worker() {
 func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {
 	switch cmd := rawCmd.(type) {
 	case *commands.NoOp:
+		c.log.Debugf("Received NoOp from peer.")
 		return true
 	case *commands.SendPacket:
 		err := c.onSendPacket(cmd)
@@ -324,6 +327,8 @@ func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
 	c.c = conn
 	c.id = atomic.AddUint64(&incomingConnID, 1) // Diagnostic only, wrapping is fine.
 	c.log = l.s.logBackend.GetLogger(fmt.Sprintf("incoming:%d", c.id))
+
+	c.log.Debugf("New incoming connection: %v", conn.RemoteAddr())
 
 	// Note: Unlike most other things, this does not spawn the worker here,
 	// because the worker needs to be spawned after the struct is added to

@@ -71,6 +71,10 @@ func (l *listener) worker() {
 			continue
 		}
 
+		tcpConn := conn.(*net.TCPConn)
+		tcpConn.SetKeepAlive(true)
+		tcpConn.SetKeepAlivePeriod(keepAliveInterval)
+
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
 
 		l.onNewConn(conn)
