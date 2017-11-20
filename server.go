@@ -271,6 +271,10 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	s.log.Noticef("Server link public key is: %s", s.linkKey.PublicKey())
 
+	if s.cfg.Debug.GenerateOnly {
+		return nil, ErrGenerateOnly
+	}
+
 	// Load and or generate mix keys.
 	if s.mixKeys, err = newMixKeys(s); err != nil {
 		s.log.Errorf("Failed to initialize mix keys: %v", err)
@@ -286,10 +290,6 @@ func New(cfg *config.Config) (*Server, error) {
 			s.Shutdown()
 		}
 	}()
-
-	if s.cfg.Debug.GenerateOnly {
-		return nil, ErrGenerateOnly
-	}
 
 	// Start the fatal error watcher.
 	go func() {

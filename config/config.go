@@ -136,7 +136,8 @@ type Debug struct {
 	// DisableMixAuthentication disables the mix incoming peer authentication.
 	DisableMixAuthentication bool
 
-	// GenerateOnly halts and cleans up the server right after key generation.
+	// GenerateOnly halts and cleans up the server right after long term
+	// key generation.
 	GenerateOnly bool
 }
 
