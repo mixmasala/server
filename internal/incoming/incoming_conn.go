@@ -47,15 +47,16 @@ type incomingConn struct {
 	e *list.Element
 	w *wire.Session
 
-	id            uint64
-	retrSeq       uint32
-	sendTokens    uint64
-	sendTokenIncr time.Duration
-	sendTokenLast time.Duration
-	isInitialized bool // Set by listener.
-	fromClient    bool
-	fromMix       bool
-	canSend       bool
+	id             uint64
+	retrSeq        uint32
+	sendTokens     uint64
+	sendTokenIncr  time.Duration
+	sendTokenLast  time.Duration
+	isInitialized  bool // Set by listener.
+	isRegistration bool
+	fromClient     bool
+	fromMix        bool
+	canSend        bool
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -65,10 +66,12 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			// This used to be a client, but is no longer listed in
 			// the user db.  Reject.
 			c.canSend = false
+			c.isRegistration = false
 			return false
 		} else if isClient {
 			// Ok this is a connection from a client.
 			c.fromClient = true
+			c.isRegistration = false
 			c.canSend = true // Clients can always send for now.
 
 			// Update the rate limiter parameters.
@@ -93,6 +96,12 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			c.sendTokenIncr = time.Duration(sendShift) * time.Millisecond
 			c.log.Debugf("Rate limit shift: %v", c.sendTokenIncr)
 
+			return true
+		}
+		// is this a new account registration?
+		if provider.IsValidRegistration(creds) {
+			c.isRegistration = true
+			c.canSend = true
 			return true
 		}
 
@@ -232,7 +241,19 @@ func (c *incomingConn) worker() {
 			c.log.Debugf("Dropping mix command received out of epoch.")
 			continue
 		}
-
+		if c.isRegistration {
+			switch cmd := rawCmd.(type) {
+			case *commands.RegisterAccount:
+				if err := c.onRegisterAccount(cmd); err != nil {
+					c.log.Debugf("Failed to handle RegisterAccount: %v", err)
+					// The client failed to claim an identity and may try again.
+					continue
+				}
+			default:
+			}
+			// The client must now reauthenticate with new credentials.
+			return
+		}
 		if c.fromClient {
 			switch cmd := rawCmd.(type) {
 			case *commands.RetrieveMessage:
@@ -296,6 +317,12 @@ func (c *incomingConn) onGetConsensus(cmd *commands.GetConsensus) error {
 		respCmd.ErrorCode = commands.ConsensusNotFound
 	}
 	return c.w.SendCommand(respCmd)
+}
+
+func (c *incomingConn) onRegisterAccount(cmd *commands.RegisterAccount) error {
+	// check and see if the account already exists
+	// if not, add the username, public identity, and link keys provided
+
 }
 
 func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
